@@ -8,9 +8,12 @@
 #include <linux/ptrace.h>
 #include <linux/static_key.h>
 #include <linux/slab.h>
+#include <linux/sched/task_stack.h>
+#include <linux/susfs_def.h>
 
 #include "adb_root.h"
 #include "arch.h"
+#include "policy/app_profile.h"
 #include "policy/feature.h"
 #include "selinux/selinux.h"
 #ifndef CONFIG_KSU_TRACEPOINT_HOOK

@@ -832,16 +832,16 @@ static int smb1355_set_parallel_charging(struct smb1355 *chip, bool disable)
 	}
 
 	chip->die_temp_deciDegC = -EINVAL;
-	/* Only enable temperature measurement for s/w based mitigation */
-	if (!chip->dt.hw_die_temp_mitigation) {
-		if (disable) {
-			chip->exit_die_temp = true;
-			cancel_delayed_work_sync(&chip->die_temp_work);
-		} else {
-			/* start the work to measure temperature */
-			chip->exit_die_temp = false;
-			schedule_delayed_work(&chip->die_temp_work, 0);
-		}
+	/* Power-saving tuning: always run s/w die-temp mitigation so that
+	 * charging current is reduced when the charger die overheats,
+	 * regardless of dtbo property (better charging heat control). */
+	if (disable) {
+		chip->exit_die_temp = true;
+		cancel_delayed_work_sync(&chip->die_temp_work);
+	} else {
+		/* start the work to measure temperature */
+		chip->exit_die_temp = false;
+		schedule_delayed_work(&chip->die_temp_work, 0);
 	}
 
 	if (chip->irq_disable_votable)

@@ -117,6 +117,8 @@ static void __security_release_secctx(struct lsm_context *cp)
 #ifdef CONFIG_KSU_SUSFS
 #define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
 u32 susfs_priv_app_sid = 0; // compatible with simonpunk, why he don't use sid cache???
+u32 susfs_init_sid = 0;
+u32 susfs_zygote_sid = 0;
 u32 susfs_ksu_sid = 0;
 #endif
 
@@ -281,6 +283,37 @@ bool susfs_is_current_init_domain(void)
 {
     return is_init(current_cred());
 }
+
+void susfs_set_batch_sid(void)
+{
+    static const char init_domain[] = "u:r:init:s0";
+    static const char zygote_domain[] = "u:r:zygote:s0";
+    static const char priv_app_domain[] = "u:r:priv_app:s0:c512,c768";
+    u32 init_sid = 0, zygote_sid = 0, priv_app_sid = 0;
+    int err;
+
+    err = security_secctx_to_secid(init_domain, strlen(init_domain), &init_sid);
+    if (err) {
+        pr_err("susfs: failed to get init sid, err: %d\n", err);
+        return;
+    }
+    err = security_secctx_to_secid(zygote_domain, strlen(zygote_domain), &zygote_sid);
+    if (err) {
+        pr_err("susfs: failed to get zygote sid, err: %d\n", err);
+        return;
+    }
+    err = security_secctx_to_secid(priv_app_domain, strlen(priv_app_domain), &priv_app_sid);
+    if (err) {
+        pr_err("susfs: failed to get priv_app sid, err: %d\n", err);
+        return;
+    }
+
+    susfs_init_sid = init_sid;
+    susfs_zygote_sid = zygote_sid;
+    susfs_priv_app_sid = priv_app_sid;
+    pr_info("susfs: batch sid cached (init=%u zygote=%u priv_app=%u ksu=%u)\n",
+            susfs_init_sid, susfs_zygote_sid, susfs_priv_app_sid, susfs_ksu_sid);
+}
 #endif // #ifdef CONFIG_KSU_SUSFS
 
 void escape_to_root_for_adb_root(void)
@@ -298,3 +331,4 @@ void escape_to_root_for_adb_root(void)
     }
     commit_creds(cred);
 }
+

@@ -72,8 +72,10 @@ include $(KSU_SRC)/tools/ddk_compatible.mk
 endif
 
 $(shell cd $(KSU_SRC); [ -f ../.git/shallow ] && $(GIT_BIN) fetch --unshallow)
-KSU_LOCAL_VERSION := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-list --count HEAD)
-KSU_VERSION := $(shell expr 30000 + $(KSU_LOCAL_VERSION) + 700)
+KSU_LOCAL_VERSION := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-list --count HEAD 2>/dev/null || echo 0)
+# Sulee7z: fixed version code for manager compatibility (v4.1.0 manager expects >= 35056)
+# KernelSU repo was re-initialized (1 commit), git count is unreliable.
+KSU_VERSION := $(shell expr 30000 + 4356 + 700)
 
 KSU_TAG_NAME    := $(shell cd $(KSU_SRC); $(GIT_BIN) describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
 KSU_COMMIT_SHA  := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")

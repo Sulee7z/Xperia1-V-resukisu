@@ -51,6 +51,7 @@ bool susfs_is_current_ksu_domain(void);
 void susfs_set_init_sid(void);
 bool susfs_is_current_init_domain(void);
 void susfs_set_priv_app_sid(void);
+void susfs_set_batch_sid(void);
 #endif // #ifdef CONFIG_KSU_SUSFS
 
 void escape_to_root_for_adb_root();

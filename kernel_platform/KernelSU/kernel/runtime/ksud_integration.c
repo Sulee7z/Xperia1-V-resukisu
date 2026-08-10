@@ -802,7 +802,10 @@ int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *v
             // key pressed, count it
             volumedown_pressed_count += 1;
             if (is_volumedown_enough(volumedown_pressed_count)) {
-                ksu_stop_input_hook_runtime();
+                if (static_key_enabled(&ksu_is_input_hook_enabled)) {
+                    static_branch_disable(&ksu_is_input_hook_enabled);
+                    pr_info("ksu_input_hook is disabled\n");
+                }
             }
         }
     }
@@ -930,12 +933,11 @@ bool ksu_is_safe_mode()
         return true;
     }
 
-    if (ksu_late_loaded) {
-        return false;
-    }
-
     // stop hook first!
-    ksu_stop_input_hook_runtime();
+    if (static_key_enabled(&ksu_is_input_hook_enabled)) {
+        static_branch_disable(&ksu_is_input_hook_enabled);
+        pr_info("ksu_input_hook is disabled\n");
+    }
 
     pr_info("volumedown_pressed_count: %d\n", volumedown_pressed_count);
     if (is_volumedown_enough(volumedown_pressed_count)) {

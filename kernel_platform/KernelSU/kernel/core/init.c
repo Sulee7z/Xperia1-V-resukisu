@@ -7,6 +7,7 @@
 #include <generated/compile.h>
 #include <linux/version.h> /* LINUX_VERSION_CODE, KERNEL_VERSION macros */
 #include <linux/moduleparam.h>
+#include <linux/susfs.h>
 
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
@@ -84,7 +85,6 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
 #endif
 
 struct cred *ksu_cred;
-bool ksu_late_loaded;
 
 // dispatcher of ksu hooks
 #ifdef CONFIG_KSU_TRACEPOINT_HOOK
@@ -147,6 +147,7 @@ void setup_ksu_cred(void)
 #ifdef CONFIG_KSU_DEBUG
 bool allow_shell = true;
 #else
+bool ksu_late_loaded;
 bool allow_shell = false;
 #endif
 
