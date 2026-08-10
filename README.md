@@ -19,7 +19,7 @@
 | **BBR** (`CONFIG_TCP_CONG_BBR`) | 默认 BBR 拥塞控制,网络更快更稳 |
 | `CONFIG_SUSPEND_SKIP_SYNC` | 挂起时跳过 sync,更快进入深度休眠 |
 | `CONFIG_WQ_POWER_EFFICIENT_DEFAULT` | 工作队列省电默认开启 |
-| `CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE` | 温控恢复出厂 STEP_WISE(避免高负载过热复位) |
+| `CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE` | 温控STEP_WISE |
 
 ### 构建伪装
 - 编译信息伪装:`build-user@build-host`
@@ -51,8 +51,6 @@ build/build.sh -j24
 fastboot flash boot boot_XQ-DQ72_resukisu-clean.img
 fastboot reboot
 ```
-
-> 说明:本设备 GPU 驱动在 vendor 侧(vendor_boot/vendor_dlkm),不在 boot 内核中,刷自定义 boot 不影响 GPU。
 
 ## 目录结构
 
