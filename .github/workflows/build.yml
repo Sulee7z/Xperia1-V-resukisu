@@ -13,7 +13,7 @@ on:
 jobs:
   build-kernel:
     name: Build Kernel (5.15.170 + ReSukiSU + SUSFS)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
 
     steps:
@@ -35,8 +35,7 @@ jobs:
       - name: Install clang-17 toolchain (prebuilts symlinks target /usr/bin/*-17)
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clang-17 lld-17 llvm-17
-          # 确保所有软链目标存在
-          BIN=kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e/bin
+          # 确保所有软链目标存�?          BIN=kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e/bin
           for t in clang clang++ ld.lld llvm-ar llvm-as llvm-cov llvm-dis llvm-dwarfdump \
                     llvm-link llvm-mc llvm-nm llvm-objcopy llvm-objdump llvm-opt \
                     llvm-profdata llvm-ranlib llvm-readelf llvm-size llvm-strings llvm-strip; do
