@@ -56,6 +56,7 @@ jobs:
           export KBUILD_BUILD_TIMESTAMP='Tue Sep 16 15:52:19 UTC 2025'
           export BUILD_CONFIG=msm-kernel/build.config.msm.kalama.le
           export VARIANT=gki
+          export LTO=thin
           export KMI_ENFORCED=0
           export KMI_SYMBOL_LIST_STRICT_MODE=0
           export OUT_DIR="$PWD/out"
