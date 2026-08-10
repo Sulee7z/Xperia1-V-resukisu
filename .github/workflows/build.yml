@@ -29,25 +29,8 @@ jobs:
             bc bison flex cpio git libssl-dev libelf-dev \
             python3 python3-pip device-tree-compiler \
             gcc g++ make rsync zip zstd lz4 xz-utils \
-            openssl dwarves libncurses-dev ccache curl wget
+            openssl dwarves libncurses-dev ccache curl wget clang-17 lld-17 llvm-17
           python3 -m pip install --quiet pyelftools
-
-      - name: Install clang-17 toolchain (prebuilts symlinks target /usr/bin/*-17)
-        run: |
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clang-17 lld-17 llvm-17
-          # 确保所有软链目标存�?          BIN=kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e/bin
-          for t in clang clang++ ld.lld llvm-ar llvm-as llvm-cov llvm-dis llvm-dwarfdump \
-                    llvm-link llvm-mc llvm-nm llvm-objcopy llvm-objdump llvm-opt \
-                    llvm-profdata llvm-ranlib llvm-readelf llvm-size llvm-strings llvm-strip; do
-            if [ -L "$BIN/$t" ]; then
-              target=$(readlink "$BIN/$t")
-              if [ ! -e "$target" ]; then
-                echo "BROKEN: $t -> $target"
-              fi
-            fi
-          done
-          clang --version | head -1
-          ld.lld --version | head -1
 
       - name: Prepare sysroot symlink
         run: |
