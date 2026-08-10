@@ -3,7 +3,6 @@ CONFIG_DEVTMPFS=y
 CONFIG_SUSPEND_SKIP_SYNC=y
 CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
 # MGLRU - Multi-Gen LRU (better memory reclaim, smoother under pressure)
-CONFIG_LRU_GEN=y
 CONFIG_LRU_GEN_ENABLED=y
 # BBR TCP congestion control (faster & smoother network)
 CONFIG_TCP_CONG_ADVANCED=y
