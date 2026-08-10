@@ -83,29 +83,7 @@ jobs:
       - name: Package boot image
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
-          python3 - << 'EOF'
-          import struct, sys
-          img = sys.argv[1]
-          out = 'boot_XQ-DQ72_susfs.img'
-          PAGE = 4096
-          with open(img, 'rb') as f:
-              kernel = f.read()
-          hdr = bytearray(1584)
-          hdr[0:8] = b'ANDROID!'
-          struct.pack_into('<I', hdr, 8, len(kernel))
-          struct.pack_into('<I', hdr, 16, 0)
-          struct.pack_into('<I', hdr, 40, 4)
-          def pad_to(n, s):
-              return ((s + n - 1) // n) * n
-          boot = bytearray()
-          boot += hdr
-          boot += b'\x00' * (PAGE - len(hdr))
-          boot += kernel
-          boot += b'\x00' * (pad_to(PAGE, len(kernel)) - len(kernel))
-          with open(out, 'wb') as f:
-              f.write(boot)
-          print(f'boot: {out} ({len(boot)} bytes)')
-          EOF "$IMG"
+          python3 "$GITHUB_WORKSPACE/scripts/make_boot.py" "$IMG" boot_XQ-DQ72_susfs.img
 
       - name: Upload boot image artifact
         uses: actions/upload-artifact@v4
