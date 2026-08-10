@@ -32,6 +32,24 @@ jobs:
             openssl dwarves libncurses-dev ccache curl wget
           python3 -m pip install --quiet pyelftools
 
+      - name: Install clang-17 toolchain (prebuilts symlinks target /usr/bin/*-17)
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clang-17 lld-17 llvm-17
+          # 确保所有软链目标存在
+          BIN=kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e/bin
+          for t in clang clang++ ld.lld llvm-ar llvm-as llvm-cov llvm-dis llvm-dwarfdump \
+                    llvm-link llvm-mc llvm-nm llvm-objcopy llvm-objdump llvm-opt \
+                    llvm-profdata llvm-ranlib llvm-readelf llvm-size llvm-strings llvm-strip; do
+            if [ -L "$BIN/$t" ]; then
+              target=$(readlink "$BIN/$t")
+              if [ ! -e "$target" ]; then
+                echo "BROKEN: $t -> $target"
+              fi
+            fi
+          done
+          clang --version | head -1
+          ld.lld --version | head -1
+
       - name: Prepare sysroot symlink
         run: |
           SYSROOT=kernel_platform/build/kernel/build-tools/sysroot
@@ -61,17 +79,12 @@ jobs:
           export OUT_DIR="$PWD/out"
           export DIST_DIR="$PWD/dist"
 
-          # 官方构建。注意:msm-kernel vendor 阶段可能有
-          # "source tree is not clean" 已知警告(不影响 gki Image),
-          # 所以不以 build.sh RC 为最终结果,改为验证 Image。
+          echo "clang check: $(which clang) $(clang --version | head -1)"
           bash build/build.sh || echo "build.sh exited non-zero (msm-kernel stage warning is expected)"
 
-          # 验证 Image 是否生成(核心产物)
           IMG=$(find out -name 'Image' -path '*gki_kernel*' | head -1)
           if [ -z "$IMG" ]; then
             echo "::error::Image not generated! Build failed."
-            echo "=== 日志尾部 ==="
-            tail -100 /tmp/nonexist 2>/dev/null || true
             exit 1
           fi
           echo "Image OK: $IMG ($(stat -c%s $IMG) bytes)"
@@ -80,7 +93,6 @@ jobs:
       - name: Verify kernel features
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
-          echo "=== 版本 ==="
           strings "$IMG" | grep -E '^5\.15\.170' | head -1
           echo "SUSFS symbols: $(strings "$IMG" | grep -c susfs)"
           echo "KSU symbols: $(strings "$IMG" | grep -c ksu_handle)"
