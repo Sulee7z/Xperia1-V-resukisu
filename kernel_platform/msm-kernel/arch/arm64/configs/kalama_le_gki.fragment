@@ -1,0 +1,16 @@
+CONFIG_DEVTMPFS=y
+# Power saving & performance (ported from ryncsn/android-common-kernel android13-5.15-silsrc-yodo-0.2)
+CONFIG_SUSPEND_SKIP_SYNC=y
+CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
+# MGLRU - Multi-Gen LRU (better memory reclaim, smoother under pressure)
+CONFIG_LRU_GEN=y
+CONFIG_LRU_GEN_ENABLED=y
+# BBR TCP congestion control (faster & smoother network)
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_DEFAULT_BBR=y
+# ReSukiSU (KSU) - source integrated, no SUSFS (removed due to stability issues)
+CONFIG_KSU=y
+CONFIG_KSU_TRACEPOINT_HOOK=y
+CONFIG_KSU_TOOLKIT_SUPPORT=y
+CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
