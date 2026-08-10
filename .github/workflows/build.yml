@@ -21,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: false
 
       - name: Install build dependencies
         run: |
@@ -30,34 +29,33 @@ jobs:
             bc bison flex cpio git libssl-dev libelf-dev \
             python3 python3-pip device-tree-compiler \
             gcc g++ make rsync zip zstd lz4 xz-utils \
-            openssl dwarves libncurses-dev ccache \
-            curl wget dosfstools mtools
+            openssl dwarves libncurses-dev ccache curl wget
           python3 -m pip install --quiet pyelftools
-          echo "--- 环境 ---"
-          gcc --version | head -1
-          make --version | head -1
-          nproc
-          df -h / | tail -1
 
-      - name: Prepare host sysroot (kernel build-tools)
+      - name: Environment self-check
+        run: |
+          echo "=== 环境自检 ==="
+          echo "--- 工具 ---"
+          for t in bash make gcc clang flex bison bc lz4 zstd xz python3 dwarves; do
+            if command -v $t >/dev/null 2>&1; then echo "OK: $t"; else echo "MISSING: $t"; fi
+          done
+          echo "--- 源码入口 ---"
+          ls -la kernel_platform/build/build.sh
+          readlink kernel_platform/build/build.sh || true
+          ls kernel_platform/build/kernel/build.sh && echo "build.sh OK"
+          echo "--- clang ---"
+          ls kernel_platform/prebuilts/clang/host/linux-x86/ 2>/dev/null
+          echo "--- build-tools ---"
+          ls kernel_platform/build/kernel/build-tools/path/linux-x86/bin/ 2>/dev/null | head -5 || echo "无自带 build-tools bin"
+          echo "--- sysroot ---"
+          ls -la kernel_platform/build/kernel/build-tools/sysroot/ 2>/dev/null | head -3
+
+      - name: Prepare sysroot symlink
         run: |
           SYSROOT=kernel_platform/build/kernel/build-tools/sysroot
           sudo mkdir -p $SYSROOT
-          if [ ! -L $SYSROOT/usr ]; then
-            sudo ln -sfn /usr $SYSROOT/usr
-          fi
-          # build-tools bin 软链(官方脚本需要)
-          BT=kernel_platform/build/kernel/build-tools/path/linux-x86
-          sudo mkdir -p $BT
-          echo "sysroot: $(ls -la $SYSROOT/ | head -3)"
-
-      - name: Prepare build-tools (download official prebuilts)
-        run: |
-          # 官方构建需要 build-tools (make, mkbootimg 等)。优先从源码树自带获取
-          echo "=== 检查源码树自带 build-tools ==="
-          find kernel_platform/build -maxdepth 3 -name 'mkbootimg*' 2>/dev/null | head -3
-          find kernel_platform/prebuilts -maxdepth 3 -type d -name 'build-tools*' 2>/dev/null | head -3
-          ls kernel_platform/build/kernel/build-tools/path/linux-x86/bin/ 2>/dev/null | head -10 || echo "(无自带 build-tools bin)"
+          [ -L $SYSROOT/usr ] || sudo ln -sfn /usr $SYSROOT/usr
+          ls -la $SYSROOT/
 
       - name: Initialize KernelSU git (required by Kbuild)
         run: |
@@ -67,9 +65,8 @@ jobs:
             git add -A
             git -c user.email=build@local -c user.name=build commit -qm "KernelSU init for Kbuild"
           fi
-          echo "KernelSU git ready: $(git rev-list --count HEAD 2>/dev/null || echo 0) commits"
 
-      - name: Build kernel (official flow)
+      - name: Build kernel (official flow, verbose on failure)
         id: build
         run: |
           cd kernel_platform
@@ -83,37 +80,18 @@ jobs:
           export OUT_DIR="$PWD/out"
           export DIST_DIR="$PWD/dist"
 
-          # 检查入口
-          echo "=== 入口检查 ==="
-          ls -la build/build.sh 2>/dev/null || ls -la build/kernel/build.sh 2>/dev/null
-          which clang || true
-          clang --version 2>/dev/null | head -1 || true
-
           echo "=== 开始构建 $(date) ==="
-          bash build/build.sh 2>&1 | tee /tmp/build.log
-          RC=${PIPESTATUS[0]}
+          # 直接输出到 stdout(不重定向),失败时页面可见完整日志
+          bash build/build.sh
+          RC=$?
           echo "=== 构建结束 $(date) RC=$RC ==="
-          echo "BUILD_RC=$RC" >> $GITHUB_ENV
-          if [ $RC -ne 0 ]; then
-            echo "=== 失败日志尾部(最后 100 行)==="
-            tail -100 /tmp/build.log
-            exit $RC
-          fi
-
-      - name: Upload build log (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: /tmp/build.log
-          if-no-files-found: ignore
+          exit $RC
 
       - name: Verify kernel output
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
           if [ -z "$IMG" ]; then
-            echo "=== 构建失败,无 Image ==="
-            tail -100 /tmp/build.log
+            echo "构建失败: 无 Image"
             exit 1
           fi
           echo "Image: $IMG ($(stat -c%s $IMG) bytes)"
