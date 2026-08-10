@@ -9,15 +9,12 @@ on:
         default: 'gki'
   push:
     branches: [master]
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
 
 jobs:
   build-kernel:
     name: Build Kernel (5.15.170 + ReSukiSU + SUSFS)
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 150
 
     steps:
       - name: Checkout source
@@ -32,8 +29,12 @@ jobs:
             bc bison flex cpio git libssl-dev libelf-dev \
             python3 python3-pip device-tree-compiler \
             gcc g++ make rsync zip zstd lz4 xz-utils \
-            net-tools openssl dwarves
+            openssl dwarves libncurses-dev ccache
           python3 -m pip install --quiet pyelftools
+          # 确认工具
+          clang --version 2>/dev/null | head -1 || true
+          gcc --version | head -1
+          nproc
 
       - name: Prepare host sysroot (kernel build-tools)
         run: |
@@ -43,13 +44,16 @@ jobs:
           if [ ! -L $SYSROOT/usr ]; then
             sudo ln -sfn /usr $SYSROOT/usr
           fi
-          # x86_64 host 头文件
-          sudo ln -sfn /usr/include/x86_64-linux-gnu /usr/include/gnu 2>/dev/null || true
+          # x86_64-linux-gnu 头文件软链(官方 build-tools 依赖)
+          if [ ! -e /usr/include/x86_64-linux-gnu ]; then
+            sudo ln -sfn /usr/include/x86_64-linux-gnu /usr/include/gnu 2>/dev/null || true
+          fi
+          # lib 软链
+          sudo ln -sfn /usr/lib/x86_64-linux-gnu $SYSROOT/usr/lib/x86_64-linux-gnu 2>/dev/null || true
           ls -la $SYSROOT/
 
-      - name: Initialize KernelSU git submodule (required by Kbuild)
+      - name: Initialize KernelSU git (required by Kbuild)
         run: |
-          # Kbuild 检测 KernelSU/.git 存在性;版本号已在 Kbuild 固定,只需有 .git 即可
           cd kernel_platform/KernelSU
           if [ ! -d .git ]; then
             git init -q
@@ -59,10 +63,10 @@ jobs:
           echo "KernelSU git ready: $(git rev-list --count HEAD 2>/dev/null || echo 0) commits"
 
       - name: Build kernel (official flow)
+        id: build
         run: |
           cd kernel_platform
           export PATH="$PWD/prebuilts/clang/host/linux-x86/clang-r450784e/bin:$PATH"
-          # 伪装时间戳(与发布一致)
           export SOURCE_DATE_EPOCH=1758042739
           export KBUILD_BUILD_TIMESTAMP='Tue Sep 16 15:52:19 UTC 2025'
           export BUILD_CONFIG=msm-kernel/build.config.msm.kalama.le
@@ -71,26 +75,37 @@ jobs:
           export KMI_SYMBOL_LIST_STRICT_MODE=0
           export OUT_DIR="$PWD/out"
           export DIST_DIR="$PWD/dist"
+          echo "PATH=$PATH" | head -c 200
+          echo ""
           build/build.sh 2>&1 | tee /tmp/build.log
-          echo "BUILD_EXIT=${PIPESTATUS[0]}"
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload build log (always, even on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          if-no-files-found: ignore
 
       - name: Verify kernel output
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
           if [ -z "$IMG" ]; then
             echo "=== 构建失败,日志尾部 ==="
-            tail -50 /tmp/build.log
+            tail -80 /tmp/build.log
             exit 1
           fi
           echo "Image: $IMG ($(stat -c%s $IMG) bytes)"
           strings "$IMG" | grep -E '^5\.15\.170' | head -1
-          strings "$IMG" | grep -c susfs | xargs echo "SUSFS symbols:"
+          echo "SUSFS symbols: $(strings "$IMG" | grep -c susfs)"
+          echo "KSU symbols: $(strings "$IMG" | grep -c ksu_handle)"
 
       - name: Package boot image
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
           python3 - << 'EOF'
-          import struct, os, sys
+          import struct, sys
 
           img = sys.argv[1]
           out = 'boot_XQ-DQ72_susfs.img'
@@ -100,23 +115,14 @@ jobs:
           with open(img, 'rb') as f:
               kernel = f.read()
 
-          # 构造 Android boot header v4(无 ramdisk,纯内核)
           hdr = bytearray(HEADER_SIZE)
           hdr[0:8] = b'ANDROID!'
           struct.pack_into('<I', hdr, 8, len(kernel))      # kernel_size
           struct.pack_into('<I', hdr, 16, 0)               # ramdisk_size
           struct.pack_into('<I', hdr, 20, 0)               # os_version
           struct.pack_into('<I', hdr, 24, 0)               # header_size
-          struct.pack_into('<I', hdr, 28, 0)               # reserved[0]
-          struct.pack_into('<I', hdr, 32, 0)               # reserved[1]
-          struct.pack_into('<I', hdr, 36, 0)               # reserved[2]
           struct.pack_into('<I', hdr, 40, 4)               # header_version = 4
-          struct.pack_into('<I', hdr, 44, 0)               # cmdline_size
-          struct.pack_into('<I', hdr, 48, 0)               # recovery_dtbo_size
-          struct.pack_into('<I', hdr, 52, 0)               # recovery_dtbo_offset
-          struct.pack_into('<I', hdr, 56, 0)               # header_size (v4 field)
 
-          # page 对齐
           def pad_to(n, size):
               return ((size + n - 1) // n) * n
 
@@ -129,8 +135,6 @@ jobs:
           with open(out, 'wb') as f:
               f.write(boot)
           print(f'boot: {out} ({len(boot)} bytes)')
-
-          # 验证
           with open(out, 'rb') as f:
               v = f.read(44)
           print(f'magic={v[0:8]}, kernel_size={struct.unpack_from("<I", v, 8)[0]}, hdr_ver={struct.unpack_from("<I", v, 40)[0]}')
@@ -143,8 +147,8 @@ jobs:
           path: boot_XQ-DQ72_susfs.img
           if-no-files-found: error
 
-      - name: Create Release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      - name: Create Release (on tags)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: boot_XQ-DQ72_susfs.img

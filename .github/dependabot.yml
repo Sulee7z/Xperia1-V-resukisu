@@ -1,0 +1,9 @@
+# Dependabot 配置:仅更新 GitHub Actions,禁用 pip 扫描
+# (仓库内含大量 AOSP/vulkan .txt 文件会被误识别为 pip 依赖导致失败)
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
