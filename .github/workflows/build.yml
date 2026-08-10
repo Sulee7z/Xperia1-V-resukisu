@@ -1,7 +1,7 @@
 name: Build Xperia 1 V Kernel
 
 on:
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:
     inputs:
       variant:
         description: '构建变体 (gki/consolidate)'
@@ -21,36 +21,43 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: false
 
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             bc bison flex cpio git libssl-dev libelf-dev \
             python3 python3-pip device-tree-compiler \
             gcc g++ make rsync zip zstd lz4 xz-utils \
-            openssl dwarves libncurses-dev ccache
+            openssl dwarves libncurses-dev ccache \
+            curl wget dosfstools mtools
           python3 -m pip install --quiet pyelftools
-          # 确认工具
-          clang --version 2>/dev/null | head -1 || true
+          echo "--- 环境 ---"
           gcc --version | head -1
+          make --version | head -1
           nproc
+          df -h / | tail -1
 
       - name: Prepare host sysroot (kernel build-tools)
         run: |
-          # 官方 build-tools sysroot 需要指向系统 /usr
           SYSROOT=kernel_platform/build/kernel/build-tools/sysroot
           sudo mkdir -p $SYSROOT
           if [ ! -L $SYSROOT/usr ]; then
             sudo ln -sfn /usr $SYSROOT/usr
           fi
-          # x86_64-linux-gnu 头文件软链(官方 build-tools 依赖)
-          if [ ! -e /usr/include/x86_64-linux-gnu ]; then
-            sudo ln -sfn /usr/include/x86_64-linux-gnu /usr/include/gnu 2>/dev/null || true
-          fi
-          # lib 软链
-          sudo ln -sfn /usr/lib/x86_64-linux-gnu $SYSROOT/usr/lib/x86_64-linux-gnu 2>/dev/null || true
-          ls -la $SYSROOT/
+          # build-tools bin 软链(官方脚本需要)
+          BT=kernel_platform/build/kernel/build-tools/path/linux-x86
+          sudo mkdir -p $BT
+          echo "sysroot: $(ls -la $SYSROOT/ | head -3)"
+
+      - name: Prepare build-tools (download official prebuilts)
+        run: |
+          # 官方构建需要 build-tools (make, mkbootimg 等)。优先从源码树自带获取
+          echo "=== 检查源码树自带 build-tools ==="
+          find kernel_platform/build -maxdepth 3 -name 'mkbootimg*' 2>/dev/null | head -3
+          find kernel_platform/prebuilts -maxdepth 3 -type d -name 'build-tools*' 2>/dev/null | head -3
+          ls kernel_platform/build/kernel/build-tools/path/linux-x86/bin/ 2>/dev/null | head -10 || echo "(无自带 build-tools bin)"
 
       - name: Initialize KernelSU git (required by Kbuild)
         run: |
@@ -75,12 +82,25 @@ jobs:
           export KMI_SYMBOL_LIST_STRICT_MODE=0
           export OUT_DIR="$PWD/out"
           export DIST_DIR="$PWD/dist"
-          echo "PATH=$PATH" | head -c 200
-          echo ""
-          build/build.sh 2>&1 | tee /tmp/build.log
-          exit ${PIPESTATUS[0]}
 
-      - name: Upload build log (always, even on failure)
+          # 检查入口
+          echo "=== 入口检查 ==="
+          ls -la build/build.sh 2>/dev/null || ls -la build/kernel/build.sh 2>/dev/null
+          which clang || true
+          clang --version 2>/dev/null | head -1 || true
+
+          echo "=== 开始构建 $(date) ==="
+          bash build/build.sh 2>&1 | tee /tmp/build.log
+          RC=${PIPESTATUS[0]}
+          echo "=== 构建结束 $(date) RC=$RC ==="
+          echo "BUILD_RC=$RC" >> $GITHUB_ENV
+          if [ $RC -ne 0 ]; then
+            echo "=== 失败日志尾部(最后 100 行)==="
+            tail -100 /tmp/build.log
+            exit $RC
+          fi
+
+      - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -92,52 +112,39 @@ jobs:
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
           if [ -z "$IMG" ]; then
-            echo "=== 构建失败,日志尾部 ==="
-            tail -80 /tmp/build.log
+            echo "=== 构建失败,无 Image ==="
+            tail -100 /tmp/build.log
             exit 1
           fi
           echo "Image: $IMG ($(stat -c%s $IMG) bytes)"
           strings "$IMG" | grep -E '^5\.15\.170' | head -1
           echo "SUSFS symbols: $(strings "$IMG" | grep -c susfs)"
-          echo "KSU symbols: $(strings "$IMG" | grep -c ksu_handle)"
 
       - name: Package boot image
         run: |
           IMG=$(find kernel_platform/out -name 'Image' -path '*gki_kernel*' | head -1)
           python3 - << 'EOF'
           import struct, sys
-
           img = sys.argv[1]
           out = 'boot_XQ-DQ72_susfs.img'
           PAGE = 4096
-          HEADER_SIZE = 1584
-
           with open(img, 'rb') as f:
               kernel = f.read()
-
-          hdr = bytearray(HEADER_SIZE)
+          hdr = bytearray(1584)
           hdr[0:8] = b'ANDROID!'
-          struct.pack_into('<I', hdr, 8, len(kernel))      # kernel_size
-          struct.pack_into('<I', hdr, 16, 0)               # ramdisk_size
-          struct.pack_into('<I', hdr, 20, 0)               # os_version
-          struct.pack_into('<I', hdr, 24, 0)               # header_size
-          struct.pack_into('<I', hdr, 40, 4)               # header_version = 4
-
-          def pad_to(n, size):
-              return ((size + n - 1) // n) * n
-
+          struct.pack_into('<I', hdr, 8, len(kernel))
+          struct.pack_into('<I', hdr, 16, 0)
+          struct.pack_into('<I', hdr, 40, 4)
+          def pad_to(n, s):
+              return ((s + n - 1) // n) * n
           boot = bytearray()
           boot += hdr
           boot += b'\x00' * (PAGE - len(hdr))
           boot += kernel
           boot += b'\x00' * (pad_to(PAGE, len(kernel)) - len(kernel))
-
           with open(out, 'wb') as f:
               f.write(boot)
           print(f'boot: {out} ({len(boot)} bytes)')
-          with open(out, 'rb') as f:
-              v = f.read(44)
-          print(f'magic={v[0:8]}, kernel_size={struct.unpack_from("<I", v, 8)[0]}, hdr_ver={struct.unpack_from("<I", v, 40)[0]}')
           EOF "$IMG"
 
       - name: Upload boot image artifact
