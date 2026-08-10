@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+      package="com.sonyericsson.idd.iddsocket.test"
+      android:versionCode="1"
+      android:versionName="1.0">
+
+    <application android:label="IddLocalSocketTest">
+      <uses-library android:name="com.sonyericsson.idd" />
+      <uses-library android:name="android.test.runner" />
+    </application>
+
+    <uses-sdk android:minSdkVersion="7" />
+
+    <instrumentation android:targetPackage="com.sonyericsson.idd.iddsocket.test"
+                     android:name="android.test.InstrumentationTestRunner" />
+
+    <uses-permission android:name="com.sonyericsson.permission.IDD" />
+    <uses-permission android:name="com.sonyericsson.permission.IDD_PRIVATE" />
+</manifest>

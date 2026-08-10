@@ -1,0 +1,58 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+package {
+    default_applicable_licenses: ["vendor_semc_system_idd_protobuf-cpp_license"],
+}
+
+license {
+    name: "vendor_semc_system_idd_protobuf-cpp_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-BSD-3-Clause",
+    ],
+    license_text: [
+        "NOTICE",
+    ],
+}
+
+cc_defaults {
+    name: "libprotobuf-cpp-2.3.0-lite-defaults",
+    srcs: [
+        "src/google/protobuf/stubs/common.cc",
+        "src/google/protobuf/stubs/once.cc",
+        "src/google/protobuf/stubs/hash.cc",
+        "src/google/protobuf/extension_set.cc",
+        "src/google/protobuf/generated_message_util.cc",
+        "src/google/protobuf/message_lite.cc",
+        "src/google/protobuf/repeated_field.cc",
+        "src/google/protobuf/wire_format_lite.cc",
+        "src/google/protobuf/io/coded_stream.cc",
+        "src/google/protobuf/io/zero_copy_stream.cc",
+        "src/google/protobuf/io/zero_copy_stream_impl_lite.cc",
+    ],
+    local_include_dirs: [
+        "android",
+        "src",
+    ],
+    cflags: ["-DGOOGLE_PROTOBUF_NO_RTTI"],
+    export_include_dirs: ["src"],
+}
+
+// C++ lite library (libc++ flavored for the platform)
+// =======================================================
+cc_library_shared {
+    // For vendor partition
+    name: "libprotobuf-cpp-2.3.0-lite",
+    owner: "somc",
+    proprietary: true,
+    defaults: ["libprotobuf-cpp-2.3.0-lite-defaults"],
+}
+
+// For system partition
+cc_library_shared {
+    name: "libprotobuf-cpp-2.3.0-lite-plat",
+    product_specific: true,
+    defaults: ["libprotobuf-cpp-2.3.0-lite-defaults"],
+}

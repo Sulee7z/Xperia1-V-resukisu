@@ -1,0 +1,79 @@
+#####################################################################
+# Copyright 2010 Sony Corporation
+#####################################################################
+#
+# Author: Carl-Emil Lagerstedt (carl-emil.lagerstedt@sonyericsson.com)
+#
+# Default rules for the log reader
+#
+# Any line starting with # is a comment. Empty lines are skipped
+#
+# There are two types of rules, include and exclude rule
+# Rules are evaluted from the bottom, and the first rule that matches wins
+#
+# Syntax: operator log loglevel tag|"tag" [keyword]
+#
+# operator := +|-
+# log      := main|radio|events|system|kernel|*
+# loglevel := verbose|debug|info|warning|error|fatal|*
+# tag      := string
+# keyword  := string (optional)
+#
+# For include rules the log level indicates to lowest level that should be included.
+# For exclude rules the log level indicates the highest level that should be excluded.
+#
+# log reader can also handle tags with white-spaces.
+# tag indicates string without any white-space.
+# "tag" indicates string with white-space.
+#
+# Note on wild cards (*): Wild cards are currently not supported or keywords,
+# this means that if you use * in a keyword it will be matched exactly
+# Examples :
+#
+#   1 Exclude anything from main
+#
+#       - main * *
+#       |  |   | |____________ Match Any tag
+#       |  |   |______________ Match Any Log Level
+#       |  |___________________Match Main log
+#       |______________________Exclude operator
+#
+#
+#   2 Include all log entrys from main with a level of at least warning#
+#
+#       + main warning *
+#       |  |   |       |______ Match Any tag
+#       |  |   |______________ Match Any Log Level
+#       |  |___________________Match Main log
+#       |______________________Include operator
+#
+#
+#   3 Include all log entrys from main with a level of at least warning containing the keyword foobar
+#
+#       + main warning * foobar
+#       |  |   |       |   |____ Keyword "foobar"
+#       |  |   |       |________ Match Any tag
+#       |  |   |________________ Match Any Log Level
+#       |  |_____________________Match Main log
+#       |________________________Include operator
+#
+#
+#   4 Include all log entries from main for tag with white-space
+#
+#       + main * "Test Log"
+#       |  |   |   |_________  Match tag "Test Log"
+#       |  |   |______________ Match Any Log Level
+#       |  |___________________Match Main log
+#       |______________________Include operator
+#
+#
+#  Note on binary log (/dev/log/events): Using keywords won't work
+#
+# Enable all logs from main with a level of at least warning
+#+ main warning *
+# Some other examples
+#+ main info jdwp
+#+ events * battery_level
+#+ main * *
+# Example for tag with white-space
+#+ kernel * "Hardware name" Maple-ROW

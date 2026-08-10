@@ -1,0 +1,10 @@
+
+Copyright (c) Sony Ericsson Mobile Communication 2014
+
+This app's functionality is similar to that of tlextract.
+It can read V4 V5 and V6 formats of tlcore as of now.
+
+Following packages are required for it to work
+Snappy compression Library
+Zlib compression
+libelf library

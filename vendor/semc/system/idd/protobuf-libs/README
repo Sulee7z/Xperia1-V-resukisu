@@ -1,0 +1,6 @@
+These prebuilt files are only located here for your convenience, for use
+by external tools for example.
+
+In the ../protobuf directory, the library that is actually running on the
+phone is created as part of the build process.
+

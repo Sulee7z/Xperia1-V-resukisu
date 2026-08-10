@@ -1,0 +1,69 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+soong_config_module_type {
+    name: "logreader_cc_binary",
+    module_type: "cc_binary",
+    config_namespace: "idd_liblog",
+    variables: ["path"],
+    properties: ["include_dirs"],
+}
+
+soong_config_string_variable {
+    name: "path",
+    values: ["core", "logging"],
+}
+
+logreader_cc_binary {
+    name: "idd-logreader",
+
+    cflags: [
+        "-Wall",
+        "-O2",
+        "-pedantic",
+        "-std=gnu99",
+    ],
+    srcs: [
+        "logreader.c",
+        "idd_system_logging.pb-c.c",
+        "rules.c",
+        "tagmap.c",
+        "util.c",
+        "config.c",
+        "logreader_configuration.pb-c.c",
+        "iddd.pb-c.c",
+        "common/tokenize.c",
+        "logreader.pb-c.c",
+        "logreader_error_probe.c",
+    ],
+
+    shared_libs: [
+        "libidd",
+        "libprotobuf-c-idd",
+        "libutils",
+        "liblog",
+        "libcutils",
+    ],
+
+    soong_config_variables: {
+        path: {
+            core : {
+                include_dirs: [
+                    "system/core/liblog/include",
+                ],
+            },
+            logging : {
+                include_dirs: [
+                    "system/logging/liblog/include",
+                ],
+            },
+        },
+    },
+
+    header_libs: ["idd_config_header"],
+
+    owner: "somc",
+    vendor: true,
+
+}

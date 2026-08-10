@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Run IDD API tests. Must be started from <IDD_ROOT>/java_api/tests.
+# usage: runtests product-and-variant
+#
+# Author: Lars Brange 23055284 lars.brange@sonyericsson.com
+
+if [ $# != 1 ]; then
+    echo "usage: runtests <product-and-variant>"
+    echo "example: runtests mimmi-eng"
+    exit 2
+fi
+
+REPO_ROOT=$(cd "$(dirname "../../../../../../..")"; pwd)
+
+pushd ${REPO_ROOT}
+source build/envsetup.sh
+lunch $1
+popd
+
+# Build the test applications:
+mmm -B localSocket
+
+mmm -B localSocket_delays
+
+mmm -B performance
+
+mmm -B socket_delays
+
+kill_iddd()
+{
+    # Send SIGTERM to stop iddd.
+    echo "Please wait (~15s) while the IDD daemon is being restarted."
+    IDD_PID=`adb shell ps | grep iddd |awk '{print $2}'`
+    adb shell kill -15 ${IDD_PID}
+    sleep 15
+}
+
+
+# Install java local socket test application and run the tests:
+adb install -r ${OUT}/data/app/IddLocalSocketTest.apk
+echo "Executing tests java local socket"
+adb shell am instrument -w com.sonyericsson.idd.iddsocket.test/android.test.InstrumentationTestRunner
+adb uninstall com.sonyericsson.idd.iddsocket.test
+
+# Install performance test application and run the tests:
+adb shell stop iddd
+adb shell "iddd -t; sleep 1"
+adb install -r ${OUT}/data/app/IddApiPerformanceTest.apk
+echo "Executing tests performance"
+adb shell am instrument -w com.sonyericsson.idd.performance.test/android.test.InstrumentationTestRunner
+adb uninstall com.sonyericsson.idd.performance.test
+kill_iddd
+
+# Install the native socket and run the tests:
+adb shell "iddd -t --socket-delays 5000:5000; sleep 1"
+adb install -r ${OUT}/data/app/IddApiSocketDelaysTest.apk
+echo "Executing tests with native socket delays."
+echo "NOTE: These tests take around 4 minutes. Don't abort them!"
+adb shell am instrument -w com.sonyericsson.idd.api.test/android.test.InstrumentationTestRunner
+adb uninstall com.sonyericsson.idd.api.test
+
+# Install java socket test application and run the tests:
+adb install -r ${OUT}/data/app/IddLocalSocketDelayTest.apk
+echo "Executing tests with java socket delays."
+echo "NOTE: These tests take around 4 minutes. Don't abort them!"
+adb shell am instrument -w com.sonyericsson.idd.iddsocket.delaytest/android.test.InstrumentationTestRunner
+adb uninstall com.sonyericsson.idd.iddsocket.delaytest
+
+kill_iddd
+# restart idd daemon.
+adb shell start iddd

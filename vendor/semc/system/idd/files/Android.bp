@@ -1,0 +1,45 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+prebuilt_etc {
+    name: "idd.fstab",
+
+    owner: "somc",
+    vendor: true,
+    src: "fstab/idd.fstab",
+    proprietary: true,
+
+}
+
+prebuilt_etc {
+    name: "iddd_user_conf",
+    src: "builtin_config/e859b8d7a4c603932a9aeba4c539ba27f2422a99",
+
+    filename: "iddd_user.conf",
+    owner: "somc",
+    vendor: true,
+    proprietary: true,
+}
+
+prebuilt_etc {
+    name: "iddd_debug_conf",
+    src: "builtin_config/dbadd687bdbb8ab60b4815233a32d4ee1fde90de",
+
+    filename: "iddd_debug.conf",
+    owner: "somc",
+    vendor: true,
+    proprietary: true,
+}
+
+prebuilt_etc {
+    name: "startup-prober.rc",
+
+    owner: "somc",
+    vendor: true,
+    src: "init/startup-prober.rc",
+    sub_dir: "init",
+    proprietary: true,
+
+}
+

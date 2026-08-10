@@ -1,0 +1,13 @@
+
+Copyright (c) Sony Ericsson Mobile Communication 2014
+
+This is a test application to create a tlcore on a 64-bit Linux machine.
+kdump & kexec scripts need to be properly modified inorder to invoke this app.
+
+Responsibilities :
+=================
+1. Dump kernel log from /var/tlcore/rdapp64/klog
+2. Dump iomem.log from /var/tlcore/rdapp64/iomem.log
+These paths are hardcoded in the code for ease of use. So before running this
+app, create these two files in the paths shown above and then execute it.
+3. It will read /proc/iomem and try to dump the sections into tlcore accordingly

@@ -1,0 +1,17 @@
+# 构建产物
+kernel_platform/out/
+kernel_platform/dist/
+kernel_platform/msm-kernel/.config
+kernel_platform/msm-kernel/.config.old
+*.raw
+*.o
+*.cmd
+*.ko
+*.mod
+*.img
+!kernel_platform/prebuilts/**/*.img
+# 工具链
+prebuilts/clang/
+# 临时
+*.log
+/tmp/

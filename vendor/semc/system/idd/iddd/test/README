@@ -1,0 +1,68 @@
+=== EXECUTE TESTS ON TARGET ===
+
+To execute all the tests in the iddd test suite (files matching tc-*.sh), run
+
+./run_tests.sh
+
+To execute specific test, run
+
+./run_tests.sh tc-0001-basic.sh
+
+on your host, with either an emulator or a device present.
+
+The test will actually wait until one is present, so if nothing happens, please make sure that you really can adb into the device/emulator manually.
+
+Sometimes - however, very seldom - the tests fail with an error message saying "device: not found". This is an error message from ADB and we can't explain why it happens. When it does, please restart the test and see if it works better next time.
+
+The tests overall are not stress-tested. There are some delays in the test scripts, but they haven't been tuned so that we know they always work. For this reason, if you get a TEST FAILED, try to re-run the test and see if it works better next time. This was mostly an issue before we had any delays at all, so you will hopefully not experience this.
+The tests named tc-*.sh do not manipulate files in the iddd service root directory.
+They can therefor run on any device. The standard iddd service will be stopped during test and started again after the test.
+
+=== Execute partition tests on host ===
+
+This test manipulates files the iddd service root directory.
+Therefor the device shall be reflashed with erase user data after this test.
+Thats why this test is not part of the regular iddd unit test suite, files matching tc-*.sh.
+
+./run_tests.sh TC-0014-partition-space.sh
+
+=== Execute tests on host ===
+
+$ ./iddd_tests.sh PC
+
+This will run the tests in "normal mode" (The same setup as when running on target)
+
+To execute the single test suite, run
+
+$ ./iddd_tests.sh tc-0001-basic.sh PC
+
+=== Execute tests with GCOV ===
+
+Prerequisite:
+
+$ sudo apt-get install lcov
+
+Then run:
+
+$ ./iddd_tests.sh PC gcov
+
+This will run all the tests and recompile iddd with code coverage instrumentation.
+
+After all tests have passed, a browser will be opened with the results of the
+analysis.
+
+=== Execute tests with Valgrind ===
+
+Prerequisite:
+
+$ sudo apt-get install valgrind
+
+Then run:
+
+$ ./iddd_tests.sh PC valgrind
+
+This will run all tests with Valgrind and it will halt on errors.
+
+To execute specific test, run
+
+$ ./iddd_tests.sh tc-0001-basic.sh PC valgrind

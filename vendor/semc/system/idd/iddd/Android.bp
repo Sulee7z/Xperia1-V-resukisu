@@ -1,0 +1,108 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+// For bring up
+// If libdevice_security_vendor is not available, Please define below on BoardConfig.mk
+// SOONG_CONFIG_NAMESPACES += iddd
+// SOONG_CONFIG_iddd += no_devsec
+// SOONG_CONFIG_iddd_no_devsec := true
+//
+// Reference:
+// https://ci.android.com/builds/submitted/6741701/linux/latest/view/android.html
+
+
+soong_config_module_type {
+    name: "iddd_cc_binary",
+    module_type: "cc_binary",
+    config_namespace: "iddd",
+    bool_variables: ["no_devsec"],
+    properties: ["cflags", "exclude_shared_libs"],
+}
+
+iddd_cc_binary {
+    name: "iddd",
+    owner: "somc",
+    vendor: true,
+
+    cflags: [
+        "-Wall",
+        "-O2",
+        "-DENABLE_LOGD"
+    ],
+
+    srcs: [
+        "counters.c",
+        "events.c",
+        "iddd.c",
+        "sdata.c",
+        "serializer.c",
+        "util.c",
+        "compactor.c",
+        "list.c",
+        "configuration.c",
+        "filter.c",
+        "settings.c",
+        "secure_mode.c",
+        "crypto.c",
+        "file_utils.c",
+        "plugins.c",
+        "protos/app_usage_data.pb-c.c",
+        "protos/common.pb-c.c",
+        "protos/configuration.pb-c.c",
+        "protos/iddd.pb-c.c",
+        "iddd_miscta.c",
+        "app_event_packages.c",
+    ],
+
+    shared_libs: [
+        "libz",
+        "libutils",
+        "libprotobuf-c-idd",
+        "libcrypto",
+        "libcutils",
+        "libbinder",
+        "libidd",
+        "libmiscta",
+        "libselinux",
+        "liblog",
+        "libdevice_security_vendor",
+    ],
+
+    static_libs: [
+        "idd_common_lib",
+    ],
+
+    header_libs: ["libidd_private_header", "idd_config_header"],
+    include_dirs: ["vendor/semc/system/core/miscta/libmiscta/inc"],
+    required: ["init.sony.idd.rc"],
+    soong_config_variables: {
+        no_devsec: {
+            cflags: ["-DNO_USE_DEVICE_SECURITY"],
+            exclude_shared_libs: ["libdevice_security_vendor"],
+        },
+    },
+}
+
+prebuilt_etc {
+    name: "init.sony.idd.rc",
+    owner: "somc",
+    vendor: true,
+    src: "init/init.sony.idd.rc",
+    sub_dir: "init",
+    proprietary: true,
+}
+
+prebuilt_etc {
+    name: "idd_report.pem",
+    src: "certs/idd_report.pem",
+    sub_dir: "security",
+    proprietary: true,
+}
+
+prebuilt_etc {
+    name: "idd_config.pem",
+    src: "certs/idd_config.pem",
+    sub_dir: "security",
+    proprietary: true,
+}

@@ -1,0 +1,89 @@
+// Copyright 2018 Sony Corporation
+
+cc_library_headers {
+    name: "libidd_private_header",
+    vendor_available: true,
+    export_include_dirs: ["private_api"],
+}
+
+cc_defaults {
+    name: "libidd-defaults",
+    srcs: [
+        "hidl_client/idd_hidl_api.cpp",
+        "hidl_client/idd_hidl_cli.cpp",
+    ],
+    local_include_dirs: [
+        "hidl_client",
+        "api",
+        "private_api",
+    ],
+    export_include_dirs: ["api"],
+    shared_libs: [
+        "libutils",
+        "libcutils",
+        "liblog",
+        "libdl",
+        "libhidlbase",
+        "libhidlmemory",
+        "android.hidl.allocator@1.0",
+        "vendor.semc.system.idd@1.0",
+    ],
+    header_libs: ["idd_config_header"],
+}
+
+cc_library_shared {
+    name: "libidd",
+    owner: "somc",
+    proprietary: true,
+    defaults: ["libidd-defaults"],
+}
+
+cc_library_shared {
+    name: "libidd-plat",
+    defaults: ["libidd-defaults"],
+}
+
+cc_binary {
+
+    // Interface definition is in
+    //   git: platform/vendor/semc/interfaces/idd
+    //   android path: vendor/semc/interfaces/idd
+
+    name: "vendor.semc.system.idd@1.1-service",
+    init_rc: ["hidl_server/vendor.semc.system.idd@1.1-service.rc"],
+    relative_install_path: "hw",
+    proprietary: true,
+
+    include_dirs: ["external/zlib"],
+    local_include_dirs: [
+        "api",
+        "private_api",
+    ],
+
+    srcs: [
+        "hidl_server/idd_api.c",
+        "hidl_server/Idd.cpp",
+        "hidl_server/service.cpp",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-O2",
+    ],
+
+    shared_libs: [
+        "liblog",
+        "libhidlbase",
+        "libhardware",
+        "libutils",
+        "libhidlmemory",
+        "libcutils",
+        "libz",
+        "android.hidl.allocator@1.0",
+        "vendor.semc.system.idd@1.0",
+        "vendor.semc.system.idd@1.1",
+    ],
+
+    header_libs: ["idd_config_header"],
+    vintf_fragments: ["hidl_server/vendor.semc.system.idd.manifest.xml"]
+}

@@ -1,0 +1,11 @@
+These test certs have been generated using:
+
+ openssl genrsa -out config-priv.pem 2048
+ openssl rsa -in config-priv.pem -pubout -out config.pem
+
+ openssl genrsa -out report-priv.pem 2048
+ openssl rsa -in report-priv.pem -pubout -out report.pem
+
+The key size has been chosen after having read:
+http://www.rsa.com/rsalabs/node.asp?id=2007
+

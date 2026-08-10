@@ -1,0 +1,30 @@
+cc_library_headers {
+    name: "libtlcore_system_headers",
+    recovery_available: true,
+
+    export_include_dirs: ["."],
+}
+
+cc_library_shared {
+
+    name: "libtlcore_system",
+    recovery_available: true,
+
+    cflags: ["-DDEBUG_LEVEL=0"],
+    shared_libs: ["liblog"],
+
+    srcs: [
+        "src/tlcore_header.c",
+        "src/tlcore.c",
+        "src/section.c",
+        "src/section_header.c",
+        "src/section_data.c",
+        "src/tlcore_utils.c",
+        "src/sha1.c",
+    ],
+
+    local_include_dirs: ["src"] + ["."],
+    header_libs: ["libtlcore_system_headers"],
+    export_header_lib_headers: ["libtlcore_system_headers"],
+}
+

@@ -1,0 +1,197 @@
+
+Copyright (c) Sony Ericsson Mobile Communication 2014
+
+tlcorelib, reads and generates a tlcore
+
+Introduction :
+==============
+a) tlcore:
+tlcore is a file containing information related to crash. The file will be in
+a SOMC defined standard format and contains various types of data(text, binary,
+etc..) all packed together.
+
+b) tlcore library :
+tlcore library provides an interface to read/write a tlcore.
+
+If application is generating a tlcore, it will always be in latest format.
+While for read operations, the library supports few legacy formats as well.
+
+The latest format currently is V6 which is as shown below:
+
+			  TLCORE FORMAT V6
+			  _________________
+			 |		   |
+			 | tlcore header   |
+			 |_________________|
+			 |		   |
+			 |Section Header 1 |
+			 |_________________|
+			 |		   |
+			 |Section data	1  |
+			 |		   |
+			 |_________________|
+			 |		   |
+			 |Section Header 2 |
+			 |_________________|
+			 |		   |
+			 |Section data 2   |
+			 |		   |
+			 |_________________|
+			 .		   .
+			 .		   .
+			 .		   .
+			 ._________________.
+			 |		   |
+			 |Section Header n |
+			 |_________________|
+			 |		   |
+			 | Section Data n  |
+			 |		   |
+			 |_________________|
+
+Tlcore formats V4 and V5 differ from the above shown format.
+
+Supported tlcore formats:
+=========================
+Read Operation:
+V4, V5 and V6
+
+Write Operation:
+V6
+
+Logging :
+=========
+In Android, all the prints will go into logcat. On others, the prints are
+printed to stdout and stderr appropriately. Applications may redirect them
+to wherever necessary.
+
+Usage:
+======
+API's exposed to the applications are present in tlcore.h which is there
+in the root directory.
+For all the functions and structures in it, a brief explanation about their
+functionality is given.
+
+For READ and WRITE, steps that need to be followed generally are outlined below:
+
+Example for READ :
+------------------
+1. Initialize the tlcore
+	struct tlcore *tlcore_obj;
+	tlcore_obj = init_tlcore("~/dumps/tlcore", TLCORE_READONLY);
+init_tlcore() in TLCORE_READONLY mode opens the tlcore file and initializes all
+the section objects by parsing the tlcore.
+
+2. Read the desired information - We can reachout to any information in the
+tlcore using tlcore_obj.
+
+Reading tlcore header information -
+	char platf_name[MAX_PLATFORM_NAME_LENGTH];
+	tlcore_obj->tlhdr->get_platform_name(platf_name);
+	......
+
+Reading Section inforamtion -
+section_head in the tlcore object points to the first section. Using next()
+function pointer in section structure, you can iterate over the sections
+and read the data from them.
+	struct section *scn;
+	char read_buf[4096];
+	scn = tlcore_obj->section_head;
+	while (scn) {
+		scn->header->get_name(scn, scn_name);
+		printf("Section name - %s", scn_name);
+		.....
+
+		scn->data->read(scn, read_buf, sizeof(read_buf), &read_size));
+		scn = scn->next();
+	}
+Above snippet prints all the section names and shows how to read first 4096
+bytes from the section(just an example).
+
+3. After reading is completely done or even if in case of an error where
+application is exiting, it is necessary to call finish_tlcore to free the
+resources used by library.
+	finish_tlcore(tlcore_obj);
+
+Example for WRITE :
+-------------------
+1. Initialize the tlcore
+	struct tlcore *tlcore_obj;
+	tlcore_obj = init_tlcore("/sdcard/tlcore", TLCORE_READWRITE);
+init tlcore in TLCORE_READWRITE mode, creates a tlcore in the specified path and
+writes some basic information like magic number and version number in the tlcore
+header fields.
+
+2. write the data into tlcore - Data into tlcore should be written section by
+section unless you use a reserve section.
+
+Write appropriate data into tlcore header - This can be done anytime before
+finish_tlcore() is called.
+	tlcore_obj->tlhdr->set_platform_name("rhine");
+	.....
+
+Create a new section through appen_section().
+	scn = tlcore_obj->append_section(TLCORE_SECTION_TYPE_TEXT);
+
+The new section consists of a header and data. Both needs to be set accordingly.
+Section Header -
+	scn->header->set_name(scn, "sample.log");
+	scn->header->set_data_format(scn, TLCORE_DATA_FORMAT_STRAIGHT);
+	scn->header->set_data_type(scn, TLCORE_DATA_TYPE_RAW);
+	scn->header->set_raw_size(scn, raw_size)
+
+Section Data -
+	char *buf = "TEST BUFFER";
+	scn->data->write(scn, buf, strlen(buf), &wr_size);
+
+Commit the section - Commiting the section is like locking the section.Once a
+section is committed, no data in it can be modified.
+	scn->commit(scn);
+
+3. After Writing is completely done or if application is exiting in case of
+error, it is necessary to call finish_tlcore to free the resources used by
+library.
+	finish_tlcore(tlcore_obj);
+
+Example for UPDATE :
+-------------------
+1. Initialize the tlcore
+	struct tlcore *tlcore_obj;
+	tlcore_obj = init_tlcore("~/dumps/tlcore", TLCORE_UPDATE);
+init_tlcore() in TLCORE_UPDATE mode opens the tlcore file and initializes all
+the section objects by parsing the tlcore.
+
+2. Get to the desired section - We can reachout to any information in the
+tlcore using tlcore_obj. Goto the section(reserved) that you want to update.
+
+	scn = tlcore_obj->section_head;
+	while (scn) {
+		ASSERT(EMERG, scn->header->get_name(scn, scn_name));
+		if (strncmp("dumper.log", scn_name, SECTION_NAME_LEN) == 0)
+			break;
+		scn = scn->next;
+	}
+Above snippet iterates through the sections to reach the dumper log section.
+Once the section is selected, we can update the corresponding fields as desired.
+Once the fields are updated, we should commit the section.
+	scn->commit(scn);
+
+3. After updating is completely done or if application is exiting in case of
+error, it is necessary to call finish_tlcore to free the resources used by
+library.
+	finish_tlcore(tlcore_obj);
+
+The steps shown above for read/write/update are just for basic understanding of
+how to use the library API's. For more details, it is advised to refer to
+documentation in tlcore.h and refer to tests/ folder where some sample realtime
+applications are present.
+
+Tests:
+=====
+Under the folder tests/ there are some sample applications that can be used to
+test the librarie's READ/WRITE functionality.
+
+Contact:
+========
+You may contact the tlcore library team in case of any concerns related to
+tlcore library.

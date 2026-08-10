@@ -1,0 +1,188 @@
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/iddd    (16174): Starting up...
+D/iddd-compactor(16174): free space output/ to 1300 kb
+D/iddd-compactor(16174): pruning output/ to 4720 kb
+D/iddd-compactor(16174): free space enough and pruning directory success
+D/iddd-util(16174): New device_id <vnknown>.
+D/iddd-util(16174): Setting device_id for request <vnknown>.
+D/iddd-util(16174): Renamed configuration file private/iddd.state_tmp to private/iddd.state
+D/iddd-util(16174): fill_test_header with known values
+D/iddd-filter(16174): No filter loaded from private/filters_cnt.txt, use default (empty Exclude filter)
+D/iddd-filter(16174): No filter loaded from private/filters_sd.txt, use default (empty Exclude filter)
+D/iddd-filter(16174): No filter loaded from private/filters.txt, use default (empty Exclude filter)
+D/iddd-conf(16174): load_new_configuration start
+D/iddd-conf(16174): Unpacking config to private directory
+D/iddd-conf(16174): Signature extraction: 0
+D/iddd-conf(16174): Data extraction: 1
+D/iddd-conf(16174): Decompressing configuration file
+D/iddd-conf(16174): Decompressing done.
+D/iddd-conf(16174): Configuration has 4 parts
+D/iddd-conf(16174): Writing conf file 1 for iddd::FilterConfig, 46 bytes data
+D/iddd-conf(16174): Writing conf file 2 for iddd::RunActions, 2 bytes data
+D/iddd-conf(16174): Writing conf file 3 for idd::LogReader, 26 bytes data
+D/iddd-conf(16174): Writing conf file 4 for logreader::Config, 48 bytes data
+D/iddd-conf(16174): Saving configuration list
+D/iddd-filter(16174): Loading filters from fd = 8
+D/iddd-filter(16174): Loading probe filters from buffer, 46 bytes
+D/iddd-filter(16174): Loading 0 filters from configuration
+D/iddd-filter(16174): Filters saved persistently to private/filters_cnt.txt
+D/iddd-filter(16174): Loading 0 filters from configuration
+D/iddd-filter(16174): Filters saved persistently to private/filters_sd.txt
+D/iddd-filter(16174): Loading 1 filters from configuration
+D/iddd-filter(16174): Filters saved persistently to private/filters.txt
+D/iddd-filter(16174): Loading filters, end
+D/iddd-conf(16174): Running actions from fd = 8
+D/iddd-conf(16174): Run log reader? Yes - pid=0
+D/iddd-conf(16174): Running actions, end
+D/iddd-conf(16174): Running actions from fd = -1 only once
+D/iddd-conf(16174): Running actions only once, end
+D/iddd-conf(16174): Cleaning up configuration files
+D/iddd-conf(16176): About to start log reader with pid 16176
+D/iddd-conf(16174): Purging input directory
+D/iddd-conf(16174): load_new_configuration end
+D/iddd    (16174): Listening to socket idd_cl
+D/iddd    (16174): Listening to socket idd_co
+D/iddd    (16174): Listening to socket idd_co_stream
+D/iddd    (16174): Using base dir '/data/idd_run/'
+D/iddd    (16174): Saving counters and static data with an interval of 600 second(s)
+I/iddd    (16174): Ready to serve the world.
+E/iddkb   (16174): Failed to send pid to kernel [22/Invalid argument]
+I/idd-logreader(16176): Starting
+E/idd-logreader(16176): Found arg s </data/idd_run/>
+D/iddd    (16174): Get config file 'idd'::'LogReader2' -> -1
+D/iddd    (16174): Client 14 disconnected
+D/iddd    (16174): Get config file 'idd'::'LogReader' -> 15
+D/iddd    (16174): Client 14 disconnected
+D/iddd    (16174): Get config file 'logreader'::'Config' -> 15
+D/iddd    (16174): Client 14 disconnected
+I/idd-logreader(16176): <idd.system_logging:LogMessage>, n_included_events=0
+I/idd-logreader(16176): Rules:
+I/idd-logreader(16176):   R <main><+><iddd><(null)>
+I/idd-logreader(16176):   R <main><-><*><(null)>
+D/iddd    (16174): Get config file 'logreader'::'ConfigFilereader' -> -1
+D/iddd    (16174): Client 14 disconnected
+I/idd-logreader(16176): Configuration contained 1 log device and 0 file device
+I/idd-logreader(16176): Started
+E/idd-logreader(16176): Leif: read -1 </data/idd_test/tc-0012-data/main.input>
+E/idd-logreader(16176): /data/idd_test/tc-0012-data/main.input, Log handler returned -1. revents 0x1, Closing file. errno 0 <Success>
+D/iddd    (16174): Flush request
+D/iddd    (16174): Permission check: Connection less client running as idd (0), permission granted
+I/iddd-compactor(16174): Generating Report...
+D/iddd-util(16174): Writing report header (164 bytes)
+D/iddd-compactor(16181): free space output/ to 1300 kb
+D/iddd-compactor(16181): pruning output/ to 4720 kb
+D/iddd-compactor(16181): free space enough and pruning directory success
+D/iddd-compactor(16181): Output saved as output/idd_1
+D/iddd-compactor(16181): Performance: the format is FL-start: test: ,time is 1400744262657612
+D/iddd-compactor(16181): Performance: the format is FL-end: test: ,time is 1400744262691071
+I/iddd-compactor(16181): Compactor all done.
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/wpa_supplicant( 1336): wlan0: CTRL-EVENT-SCAN-STARTED 
+D/ConnectivityServiceHSM( 1032): Actual State: DefaultConnectivityState, Current State: DefaultConnectivityState.processMessage what=115
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/wpa_supplicant( 1336): wlan0: CTRL-EVENT-SCAN-STARTED 
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/wpa_supplicant( 1336): wlan0: CTRL-EVENT-SCAN-STARTED 
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/wpa_supplicant( 1336): wlan0: CTRL-EVENT-SCAN-STARTED 
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+D/SizeAdaptiveLayout( 6043): com.android.internal.widget.SizeAdaptiveLayout{44a50690 V.E..... ......ID 2,2-1078,194 #7f08008e app:id/adaptive}child view android.widget.FrameLayout{44a76da0 V.E..... ......ID 0,0-1076,192 #10202e3 android:id/status_bar_latest_event_content} measured out of bounds at 185px clamped to 192px
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+I/wpa_supplicant( 1336): wlan0: CTRL-EVENT-SCAN-STARTED 
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+E/QcrilMsgTunnelSocket( 3041): IOException - java.io.IOException: No such file or directory Reason: No such file or directory
+D/Ulp_jni ( 1032): Location CB invoked

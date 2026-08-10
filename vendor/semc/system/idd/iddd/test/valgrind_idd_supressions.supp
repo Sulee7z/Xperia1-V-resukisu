@@ -1,0 +1,216 @@
+##----------------------------------------------------------------------##
+# IDD specific suppressions for the Valgrind tool 
+# From version 3.4.0, stackframe wildcard ... is valid.
+# That will give us the possibility to decrease the number of suppressions
+
+# Memcheck:Cond = "Conditional jump or move depends on uninitialised value(s)"
+{
+   gzclose_Cond_TC_Counters
+   Memcheck:Cond
+   obj:/usr/lib/libz.so.1.2.3.3
+   fun:deflate
+   fun:gzclose
+}
+
+# Memcheck:Value4 = "Use of uninitialised value of size 4"
+{
+   gzclose_Value4_TC_Config_ReportMaxSize
+   Memcheck:Value4
+   obj:/usr/lib/libz.so.1.2.3.3
+   fun:deflate
+   fun:gzclose
+}
+
+{
+   gzclose_Value4_TC_Config_ReportMaxSize_2
+   Memcheck:Value4
+   obj:/usr/lib/libz.so.1.2.3.3
+   obj:/usr/lib/libz.so.1.2.3.3
+   obj:/usr/lib/libz.so.1.2.3.3
+   fun:deflate
+   fun:gzclose
+}
+
+# Memcheck:Param = "Syscall param write(buf) points to uninitialised byte(s)"
+{
+   gzclose_Param_TC_Config_ReportMaxSize
+   Memcheck:Param
+   write(buf)
+   obj:/lib/ld-2.8.90.so
+   fun:_IO_do_write
+   fun:_IO_file_close_it
+   fun:fclose
+   obj:/usr/lib/libz.so.1.2.3.3
+}
+
+# Memcheck:Param = "Syscall param socketcall.sendmsg(msg.msg_control) points to uninitialised byte(s)"
+{
+   sendmsg_Param_TC_Config_ReportMaxSize_2
+   Memcheck:Param
+   socketcall.sendmsg(msg.msg_control)
+   obj:/lib/libc-2.11.1.so
+   fun:handle_data
+   fun:receive_seq_client
+   fun:main
+}
+
+#"Conditional jump or move depends on uninitialised value(s)" in EVP_VerifyFinal() (OpenSSL)
+{
+   EVP_VerifyFinal_Cond
+   Memcheck:Cond
+   fun:BN_div
+   fun:BN_nnmod
+   fun:BN_mod_inverse
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_decrypt
+   fun:RSA_verify
+   fun:EVP_VerifyFinal
+   fun:verify_data
+}
+{
+   EVP_VerifyFinal_Cond_2
+   Memcheck:Cond
+   fun:*
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_decrypt
+   fun:RSA_verify
+   fun:EVP_VerifyFinal
+   fun:verify_data
+}
+
+# This is a memleak when running testcase "Correct Sig Replace" from tc-0010-verification.sh
+# and when running testcase "Raw-Verify Fail" from tc-0010-verification.sh
+# and when running testcase "Basic Functionality" from tc-0011-encryption.sh.
+# TODO: This code is only run during testing but the leak should be analysed and removed anyway.
+# "280 bytes in 10 blocks are still reachable in loss record 1 of 1"
+# "848 bytes in 14 blocks are still reachable in loss record 2 of 2"
+# "524 bytes in 11 blocks are still reachable in loss record 2 of 2"
+{
+   PEM_read_PUBKEY_Leak
+   Memcheck:Leak
+   fun:malloc
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:CRYPTO_malloc
+   fun:lh_new
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:CRYPTO_new_ex_data
+   fun:BIO_set
+   fun:BIO_new
+   fun:PEM_ASN1_read
+   fun:PEM_read_PUBKEY
+   fun:get_public_key
+}
+
+# The three following error occurs when running testcase "Correct Sig Replace" from tc-0010-verification.sh.
+# TODO: This code is only run during testing but the error should be analysed and removed anyway.
+# "Conditional jump or move depends on uninitialised value(s)"
+{
+   EVP_VerifyFinal_1
+   Memcheck:Cond
+   fun:BN_mod_inverse
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_decrypt
+   fun:RSA_verify
+   fun:EVP_VerifyFinal
+   fun:verify_data
+   fun:crypto_verify_config
+   fun:verify_config
+   fun:load_new_configuration
+   fun:handle_data
+   fun:receive_dgram
+   fun:main
+}
+{
+   EVP_VerifyFinal_2
+   Memcheck:Cond
+   fun:BN_div
+   fun:BN_nnmod
+   fun:BN_mod_inverse
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_decrypt
+   fun:RSA_verify
+   fun:EVP_VerifyFinal
+   fun:verify_data
+   fun:crypto_verify_config
+   fun:verify_config
+   fun:load_new_configuration
+   fun:handle_data
+   fun:receive_dgram
+   fun:main
+}
+{
+   EVP_VerifyFinal_3
+   Memcheck:Cond
+   fun:BN_div
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_decrypt
+   fun:RSA_verify
+   fun:EVP_VerifyFinal
+   fun:verify_data
+   fun:crypto_verify_config
+   fun:verify_config
+   fun:load_new_configuration
+   fun:handle_data
+   fun:receive_dgram
+   fun:main
+}
+
+# These are errors when running various testcase from tc-0011-encryption.sh.
+# TODO: This code is probably run during normal execution and shall be analysed and fixed.
+# "Conditional jump or move depends on uninitialised value(s)"
+{
+   EVP_SealInit_Cond_TC_encryption_1
+   Memcheck:Cond
+   fun:BN_mod_inverse
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_encrypt
+   fun:EVP_PKEY_encrypt
+   fun:EVP_SealInit
+   fun:encrypt_init
+}
+{
+   EVP_SealInit_Cond_TC_encryption_2
+   Memcheck:Cond
+   fun:BN_div
+   fun:BN_nnmod
+   fun:BN_mod_inverse
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_encrypt
+   fun:EVP_PKEY_encrypt
+   fun:EVP_SealInit
+   fun:encrypt_init
+}
+{
+   EVP_SealInit_Cond_TC_encryption_3
+   Memcheck:Cond
+   fun:BN_div
+   fun:BN_MONT_CTX_set
+   fun:BN_MONT_CTX_set_locked
+   obj:/usr/lib/i686/cmov/libcrypto.so.0.9.8
+   fun:RSA_public_encrypt
+   fun:EVP_PKEY_encrypt
+   fun:EVP_SealInit
+   fun:encrypt_init
+}
+{
+   EVP_SealInit_Addr_TC_encryption_4
+   Memcheck:Addr8
+   fun:AES_cbc_encrypt
+   obj:*
+}
+

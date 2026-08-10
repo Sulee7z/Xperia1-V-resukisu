@@ -1,0 +1,19 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+cc_library_static {
+    name: "idd_common_lib",
+    vendor_available: true,
+    srcs: [
+        "*.c",
+    ],
+    export_include_dirs: ["."],
+
+    shared_libs: [
+        "liblog",
+        "libcrypto",
+    ],
+
+    header_libs: ["idd_config_header"],
+}

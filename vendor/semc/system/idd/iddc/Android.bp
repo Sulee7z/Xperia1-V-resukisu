@@ -1,0 +1,36 @@
+//
+// Copyright 2020 Sony Corporation
+//
+
+cc_binary {
+    name: "iddc",
+    owner: "somc",
+    vendor: true,
+
+    cflags: [
+        "-Wall",
+        "-O2",
+    ],
+    srcs: [
+        "iddc.c",
+        "protos/agent.pb-c.c",
+        "iddconfigparser.c",
+        "iddd_protos/common.pb-c.c",
+        "iddd_protos/configuration.pb-c.c",
+        "iddd_protos/iddd.pb-c.c",
+    ],
+
+    header_libs: ["libidd_private_header", "idd_config_header"],
+
+    shared_libs: [
+        "libcutils",
+        "libidd",
+        "libcrypto",
+        "libprotobuf-c-idd",
+        "liblog",
+    ],
+
+    static_libs: [
+        "idd_common_lib",
+    ],
+}
