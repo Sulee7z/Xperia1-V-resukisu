@@ -28,11 +28,9 @@ jobs:
       - name: Install SDK platforms & build-tools
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          yes | sdkmanager "build-tools;36.0.0" >/dev/null 2>&1 || true
-          # android-37 may not be on the stable channel; AGP auto-downloads the
-          # missing platform during the gradle build.
-          yes | sdkmanager "platforms;android-37" >/dev/null 2>&1 \
-            || echo "android-37 not on stable channel - AGP will auto-download"
+          # android-34 is the newest stable platform guaranteed on the channel;
+          # compileSdk 37 is auto-downloaded by AGP during the gradle build.
+          yes | sdkmanager "platforms;android-34" "build-tools;36.0.0" >/dev/null 2>&1 || true
           ls "$ANDROID_HOME/platforms/" || true
 
       - name: Build FEAS app (Xposed module APK)
@@ -66,11 +64,10 @@ jobs:
         working-directory: userspace
         run: |
           mkdir -p feasd-java/build/classes feasd-java/build/dex
-          # locate the newest installed android.jar (AGP auto-downloads the
-          # compileSdk platform; the stable sdkmanager may not offer 37)
-          ANDROID_JAR="$(ls "$ANDROID_HOME"/platforms/*/android.jar 2>/dev/null | sort -V | tail -1)"
-          test -n "$ANDROID_JAR" || { echo "no android.jar found:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
-          echo "using $ANDROID_JAR"
+          # feasd only uses android.util.Log + dalvik.system.PathClassLoader
+          # (stable since forever) - compile against the stable android-34 jar.
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar"
+          test -f "$ANDROID_JAR" || { echo "android-34 jar missing:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
           D8_JAR="$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
             -d feasd-java/build/classes \
