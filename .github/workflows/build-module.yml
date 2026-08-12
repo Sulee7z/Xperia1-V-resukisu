@@ -63,21 +63,27 @@ jobs:
       - name: Build feasd daemon jar (javac + d8 + dex)
         working-directory: userspace
         run: |
+          set -x
           mkdir -p feasd-java/build/classes feasd-java/build/dex
-          # feasd only uses android.util.Log + dalvik.system.PathClassLoader
-          # (stable since forever) - compile against the stable android-34 jar.
           ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar"
           test -f "$ANDROID_JAR" || { echo "android-34 jar missing:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
           D8_JAR="$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
+          test -f "$D8_JAR" || { echo "d8.jar missing:"; ls "$ANDROID_HOME/build-tools/"; exit 1; }
+          which javac java jar || true
           javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
             -d feasd-java/build/classes \
             feasd-java/src/com/sony/feas/daemon/Main.java \
             feasd-java/src/com/sony/feas/daemon/HmdController.java
+          echo "JAVAC_EXIT=$?"
+          find feasd-java/build/classes -name '*.class' | head -5
           java -cp "$D8_JAR" com.android.tools.r8.D8 \
             --release --min-api 31 \
             --output feasd-java/build/dex \
             $(find feasd-java/build/classes -name '*.class')
+          echo "D8_EXIT=$?"
+          ls -la feasd-java/build/dex/
           (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex)
+          echo "JAR_EXIT=$?"
           ls -la feasd-java/feasd.jar
 
       - name: Assemble module zip
