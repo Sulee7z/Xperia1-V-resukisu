@@ -27,8 +27,9 @@ jobs:
 
       - name: Install SDK platforms & build-tools
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0" >/dev/null
-          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0" 2>&1 | tail -20
+          ls "$ANDROID_HOME/platforms/" || true
 
       - name: Build FEAS app (Xposed module APK)
         working-directory: userspace
