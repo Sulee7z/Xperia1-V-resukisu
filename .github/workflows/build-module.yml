@@ -67,13 +67,24 @@ jobs:
           javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
             -d feasd-java/build/classes \
             feasd-java/src/com/sony/feas/daemon/Main.java \
-            feasd-java/src/com/sony/feas/daemon/HmdController.java
+            feasd-java/src/com/sony/feas/daemon/HmdController.java \
+            > /tmp/feasd-build.log 2>&1 || true
           java -cp "$D8_JAR" com.android.tools.r8.D8 \
             --release --min-api 31 \
             --output feasd-java/build/dex \
-            $(find feasd-java/build/classes -name '*.class')
-          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex)
-          ls -la feasd-java/feasd.jar
+            $(find feasd-java/build/classes -name '*.class') \
+            >> /tmp/feasd-build.log 2>&1 || true
+          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex) \
+            >> /tmp/feasd-build.log 2>&1 || true
+          cp /tmp/feasd-build.log "$GITHUB_WORKSPACE/feasd-build.log" || true
+          tail -60 /tmp/feasd-build.log
+          ls -la feasd-java/feasd.jar || true
+          {
+            echo '### feasd build log'
+            echo '```'
+            tail -60 /tmp/feasd-build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assemble module zip
         working-directory: userspace
