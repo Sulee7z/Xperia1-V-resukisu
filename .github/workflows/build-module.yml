@@ -48,6 +48,16 @@ jobs:
           name: build-log
           path: gradle-build.log
 
+      - name: Publish failure summary
+        if: failure()
+        run: |
+          {
+            echo '### Gradle build log (tail)'
+            echo '```'
+            tail -100 /tmp/gradle-build.log 2>/dev/null || echo 'no log'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build feasd daemon jar (javac + d8 + dex)
         working-directory: userspace
         run: |
