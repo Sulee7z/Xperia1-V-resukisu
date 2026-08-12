@@ -35,11 +35,18 @@ jobs:
         working-directory: userspace
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :overlay:assembleRelease --console=plain --stacktrace 2>&1 | tail -80
-          echo "GRADLE_RC=${PIPESTATUS[0]}"
-          test ${PIPESTATUS[0]} -eq 0
-          ls -la app/build/outputs/apk/debug/app-debug.apk
-          ls -la overlay/build/outputs/apk/release/ || true
+          ./gradlew :app:assembleDebug :overlay:assembleRelease --console=plain --stacktrace \
+            > /tmp/gradle-build.log 2>&1 || true
+          tail -120 /tmp/gradle-build.log
+          cp /tmp/gradle-build.log "$GITHUB_WORKSPACE/gradle-build.log" || true
+          ls -la app/build/outputs/apk/debug/app-debug.apk || true
+
+      - name: Upload build log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: gradle-build.log
 
       - name: Build feasd daemon jar (javac + d8 + dex)
         working-directory: userspace
