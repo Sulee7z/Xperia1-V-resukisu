@@ -28,7 +28,11 @@ jobs:
       - name: Install SDK platforms & build-tools
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0" 2>&1 | tail -20
+          yes | sdkmanager "build-tools;36.0.0" >/dev/null 2>&1 || true
+          # android-37 may not be on the stable channel; AGP auto-downloads the
+          # missing platform during the gradle build.
+          yes | sdkmanager "platforms;android-37" >/dev/null 2>&1 \
+            || echo "android-37 not on stable channel - AGP will auto-download"
           ls "$ANDROID_HOME/platforms/" || true
 
       - name: Build FEAS app (Xposed module APK)
@@ -62,29 +66,22 @@ jobs:
         working-directory: userspace
         run: |
           mkdir -p feasd-java/build/classes feasd-java/build/dex
-          ANDROID_JAR="$ANDROID_HOME/platforms/android-37/android.jar"
+          # locate the newest installed android.jar (AGP auto-downloads the
+          # compileSdk platform; the stable sdkmanager may not offer 37)
+          ANDROID_JAR="$(ls "$ANDROID_HOME"/platforms/*/android.jar 2>/dev/null | sort -V | tail -1)"
+          test -n "$ANDROID_JAR" || { echo "no android.jar found:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
+          echo "using $ANDROID_JAR"
           D8_JAR="$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
             -d feasd-java/build/classes \
             feasd-java/src/com/sony/feas/daemon/Main.java \
-            feasd-java/src/com/sony/feas/daemon/HmdController.java \
-            > /tmp/feasd-build.log 2>&1 || true
+            feasd-java/src/com/sony/feas/daemon/HmdController.java
           java -cp "$D8_JAR" com.android.tools.r8.D8 \
             --release --min-api 31 \
             --output feasd-java/build/dex \
-            $(find feasd-java/build/classes -name '*.class') \
-            >> /tmp/feasd-build.log 2>&1 || true
-          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex) \
-            >> /tmp/feasd-build.log 2>&1 || true
-          cp /tmp/feasd-build.log "$GITHUB_WORKSPACE/feasd-build.log" || true
-          tail -60 /tmp/feasd-build.log
-          ls -la feasd-java/feasd.jar || true
-          {
-            echo '### feasd build log'
-            echo '```'
-            tail -60 /tmp/feasd-build.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            $(find feasd-java/build/classes -name '*.class')
+          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex)
+          ls -la feasd-java/feasd.jar
 
       - name: Assemble module zip
         working-directory: userspace
