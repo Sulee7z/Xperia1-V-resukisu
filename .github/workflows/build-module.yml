@@ -82,7 +82,7 @@ jobs:
             $(find feasd-java/build/classes -name '*.class')
           echo "D8_EXIT=$?"
           ls -la feasd-java/build/dex/
-          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex)
+          (cd feasd-java/build/dex && jar cf ../../feasd.jar classes.dex)
           echo "JAR_EXIT=$?"
           ls -la feasd-java/feasd.jar
 
