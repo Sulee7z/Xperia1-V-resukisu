@@ -1,0 +1,3 @@
+# FEAS module - Vector/libxposed API 101
+# Modern API entry point list
+com.sony.feas.FeasModule

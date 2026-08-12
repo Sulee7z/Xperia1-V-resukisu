@@ -1,0 +1,2 @@
+# Legacy Xposed API entry point (for Vector legacy compatibility)
+com.sony.feas.FeasModule

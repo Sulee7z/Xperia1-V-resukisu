@@ -1,0 +1,55 @@
+name: Build dtbo image
+
+on:
+  push:
+    paths:
+      - 'dtbo/**'
+      - '.github/workflows/build-dtbo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install device tree compiler
+        run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+
+      - name: Recompile patched overlay_07 (DFPS properties)
+        working-directory: dtbo
+        run: |
+          # replace the stock overlay_07.dtb with the DFPS-patched build so the
+          # packer includes exactly one overlay_07
+          rm -f overlay_07.dtb
+          dtc -I dts -O dtb -o overlay_07.dtb overlay_07_patched.dts 2>&1 | \
+            grep -viE 'warning|^$' | head -5 || true
+          ls -la overlay_07.dtb
+
+      - name: Verify DFPS properties present
+        working-directory: dtbo
+        run: |
+          dtc -I dtb -O dts overlay_07.dtb | grep -c dfps && \
+            echo "DFPS properties OK"
+
+      - name: Build DTBO image
+        working-directory: dtbo
+        run: |
+          mkdir -p dist
+          python3 build_dtbo.py . dist/dtbo_patched.img
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dtbo-patched
+          path: dtbo/dist/dtbo_patched.img
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dtbo/dist/dtbo_patched.img
+          generate_release_notes: true

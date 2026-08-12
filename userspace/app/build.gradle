@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application' version '9.3.1'
+}
+
+android {
+    namespace 'com.sony.feas'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "com.sony.feas"
+        minSdk 29
+        targetSdk 37
+        versionCode 9
+        versionName "0.7.0"
+    }
+
+    buildTypes {
+        release {
+            // CRITICAL: R8/minify breaks libxposed dynamic hooker loading.
+            // Keep module unminified so Vector can load FrameHooker class.
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // libxposed API: compileOnly - framework provides the classes at runtime
+    compileOnly 'io.github.libxposed:api:102.0.0'
+    // Hidden framework classes (android.view.DisplayInfo is @hide): compileOnly,
+    // real classes come from the boot classpath in the hooked processes.
+    compileOnly project(':hidden-api')
+}

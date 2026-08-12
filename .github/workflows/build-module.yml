@@ -1,0 +1,100 @@
+name: Build module zip (APK + daemon + overlay)
+
+on:
+  push:
+    paths:
+      - 'userspace/**'
+      - '.github/workflows/build-module.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platforms & build-tools
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;36.0.0" >/dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+      - name: Build FEAS app (Xposed module APK)
+        working-directory: userspace
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :overlay:assembleRelease --console=plain
+          ls -la app/build/outputs/apk/debug/app-debug.apk
+          ls -la overlay/build/outputs/apk/release/
+
+      - name: Build feasd daemon jar (javac + d8 + dex)
+        working-directory: userspace
+        run: |
+          mkdir -p feasd-java/build/classes feasd-java/build/dex
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-37/android.jar"
+          D8_JAR="$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
+          javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
+            -d feasd-java/build/classes \
+            feasd-java/src/com/sony/feas/daemon/Main.java \
+            feasd-java/src/com/sony/feas/daemon/HmdController.java
+          java -cp "$D8_JAR" com.android.tools.r8.D8 \
+            --release --min-api 31 \
+            --output feasd-java/build/dex \
+            $(find feasd-java/build/classes -name '*.class')
+          (cd feasd-java/build/dex && jar cf ../feasd.jar classes.dex)
+          ls -la feasd-java/feasd.jar
+
+      - name: Assemble module zip
+        working-directory: userspace
+        run: |
+          mkdir -p dist
+          mkdir -p module/system/product/overlay
+          cp app/build/outputs/apk/debug/app-debug.apk module/app-debug.apk
+          cp feasd-java/feasd.jar module/feasd.jar
+          cp overlay/build/outputs/apk/release/*.apk module/system/product/overlay/pdx234-resolution-frameworkres-overlay.apk
+          python3 - <<'EOF'
+          import zipfile, os, glob
+          out = 'dist/FEAS-allinone.zip'
+          if os.path.exists(out): os.remove(out)
+          # stable permission mapping
+          files = []
+          for root, dirs, names in os.walk('module'):
+              for n in names:
+                  p = os.path.join(root, n)
+                  rel = os.path.relpath(p, 'module').replace(os.sep, '/')
+                  mode = 0o755 if n in ('service.sh','customize.sh','update-binary') else 0o644
+                  files.append((rel, p, mode))
+          with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+              for rel, p, mode in sorted(files):
+                  zi = zipfile.ZipInfo(rel)
+                  zi.external_attr = (mode & 0xFFFF) << 16
+                  zi.compress_type = zipfile.ZIP_DEFLATED
+                  with open(p, 'rb') as f:
+                      z.writestr(zi, f.read())
+          bad = [r for r,_,_ in files if '\\' in r]
+          print('entries:', len(files), 'backslash:', bad)
+          EOF
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: feas-allinone
+          path: userspace/dist/FEAS-allinone.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: userspace/dist/FEAS-allinone.zip
+          generate_release_notes: true

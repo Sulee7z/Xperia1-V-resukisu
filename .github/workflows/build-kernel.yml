@@ -1,0 +1,82 @@
+name: Build kernel with perf_mgr (GKI 5.15)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kernel/**'
+      - '.github/workflows/build-kernel.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch GKI 5.15 kernel tree
+        run: |
+          git clone --depth 1 --branch android13-5.15 \
+            https://github.com/aosp-mirror/kernel_common.git gki
+          echo "kernel tree fetched"
+
+      - name: Integrate perf_mgr driver
+        run: |
+          mkdir -p gki/drivers/misc/perf_mgr
+          cp kernel/perf_mgr.c kernel/perf_mgr.h kernel/Kconfig gki/drivers/misc/perf_mgr/
+          # expose the Kconfig symbol from drivers/misc
+          grep -q 'source "drivers/misc/perf_mgr/Kconfig"' gki/drivers/misc/Kconfig || \
+            echo 'source "drivers/misc/perf_mgr/Kconfig"' >> gki/drivers/misc/Kconfig
+          cat >> gki/drivers/misc/perf_mgr/Makefile <<'EOF'
+          obj-$(CONFIG_PERF_MGR) += perf_mgr.o
+          EOF
+          grep -q 'CONFIG_PERF_MGR=y' gki/arch/arm64/configs/gki_defconfig || \
+            echo 'CONFIG_PERF_MGR=y' >> gki/arch/arm64/configs/gki_defconfig
+          echo "driver integrated"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential flex bison libssl-dev libelf-dev \
+            bc python3 unzip zip device-tree-compiler
+          echo "deps installed"
+
+      - name: Build kernel (GKI arm64 defconfig, LLVM)
+        working-directory: gki
+        run: |
+          export PATH=/usr/lib/llvm-18/bin:$PATH
+          make ARCH=arm64 LLVM=1 gki_defconfig
+          make ARCH=arm64 LLVM=1 -j$(nproc) Image vmlinux 2>&1 | tail -20
+          ls -la arch/arm64/boot/Image vmlinux
+
+      - name: Verify perf_mgr built-in
+        working-directory: gki
+        run: |
+          grep -E '^CONFIG_PERF_MGR' .config
+          grep -q 'CONFIG_PERF_MGR=y' .config && echo "perf_mgr built-in OK" || \
+            (grep -E '^CONFIG_PERF_MGR' .config; exit 1)
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          cp gki/arch/arm64/boot/Image dist/Image
+          cp gki/vmlinux dist/vmlinux
+          cp gki/.config dist/gki_defconfig_effective.config
+          cp kernel/perf_mgr.c kernel/perf_mgr.h dist/
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-with-perfmgr
+          path: dist/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Image
+          generate_release_notes: true

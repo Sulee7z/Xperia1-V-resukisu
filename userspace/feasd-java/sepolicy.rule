@@ -1,0 +1,5 @@
+# FEAS sepolicy - sysfs frame reporting
+# Allow platform_app/systemui to read+open+write the perf_manager sysfs node
+allow platform_app sysfs file { read open write getattr }
+allow systemui sysfs file { read open write getattr }
+allow untrusted_app sysfs file { read open getattr }

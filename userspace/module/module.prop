@@ -1,0 +1,6 @@
+id=feas
+name=FEAS (FPS-aware scheduling)
+version=v0.8.1
+versionCode=21
+author=Sulee7z
+description=FPS-driven energy-aware scheduling + resolution unlock + 240MHz MBR (BFI): root daemon (zero-spawn dfps switch: setprop via reflection + direct sysfs, touch->120Hz immediate, idle->60Hz, GPU compensation, animation boost) + FEAS Xposed module (vsync reporting, supportedModes sorting, Settings options, boot resolution restore with real Display.Mode) + force-reinstall APK each boot + overlay.

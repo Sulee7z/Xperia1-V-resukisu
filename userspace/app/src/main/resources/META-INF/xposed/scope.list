@@ -1,0 +1,15 @@
+# FEAS module scope - apps to inject frame reporting into
+# System UI (status bar / recents animations)
+com.android.systemui
+# Launcher
+com.sony.sonyericsson.home
+# Common game / app targets (add more via Vector manager)
+com.miHoYo.GenshinImpact
+com.miHoYo.hkrpg
+com.tencent.tmgp.sgame
+com.pubg.krmobile
+# Resolution unlock: system_server (DisplayManagerService mode sorting)
+# NOTE: Vector framework uses "system" (not "android") to denote system_server
+system
+# Resolution unlock: Settings display page (resolution options)
+com.android.settings

@@ -1,0 +1,6 @@
+#!/sbin/sh
+OUTFD=$2
+ZIPFILE=$3
+ui_print() { echo "$1"; }
+ui_print "Installing FEAS Binder daemon..."
+exit 0
