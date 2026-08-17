@@ -52,11 +52,26 @@ jobs:
         working-directory: kernel_platform
         run: |
           export PATH=$HOME/clang/bin:$PATH
+          echo "=== 资源 before ==="
+          df -h . ; free -m
           make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
             -j$(nproc) Image > kbuild.log 2>&1
           rc=$?
-          tail -40 kbuild.log
+          echo "MAKE_RC=$rc"
+          echo "=== 资源 after ==="
+          df -h . ; free -m
+          echo "=== 错误行 ==="
+          grep -nE 'error:|Error [0-9]|No space|Killed|out of memory|fatal|undefined reference|ld.lld|LLVM ERROR' kbuild.log | head -25
+          echo "=== tail ==="
+          tail -15 kbuild.log
           exit $rc
+
+      - name: Upload kbuild log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kbuild-log
+          path: kernel_platform/kbuild.log
 
       - name: Build Image.lz4
         working-directory: kernel_platform
