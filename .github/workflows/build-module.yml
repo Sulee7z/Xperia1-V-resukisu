@@ -28,16 +28,18 @@ jobs:
       - name: Install SDK platforms & build-tools
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          # android-34 is the newest stable platform guaranteed on the channel;
-          # compileSdk 37 is auto-downloaded by AGP during the gradle build.
-          yes | sdkmanager "platforms;android-34" "build-tools;36.0.0" >/dev/null 2>&1 || true
-          ls "$ANDROID_HOME/platforms/" || true
+          # app compiles against SDK 37; daemon jar uses the same android.jar
+          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0" \
+            >/dev/null 2>&1 || \
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" \
+            >/dev/null 2>&1 || true
+          ls "$ANDROID_HOME/platforms/"
 
       - name: Build FEAS app (Xposed module APK)
         working-directory: userspace
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :overlay:assembleRelease --console=plain --stacktrace \
+          ./gradlew :app:assembleDebug :overlay:assembleRelease --console=plain \
             > /tmp/gradle-build.log 2>&1 || true
           tail -120 /tmp/gradle-build.log
           cp /tmp/gradle-build.log "$GITHUB_WORKSPACE/gradle-build.log" || true
@@ -65,19 +67,21 @@ jobs:
         run: |
           set -x
           mkdir -p feasd-java/build/classes feasd-java/build/dex
-          ANDROID_JAR="$ANDROID_HOME/platforms/android-34/android.jar"
-          test -f "$ANDROID_JAR" || { echo "android-34 jar missing:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-37/android.jar"
+          test -f "$ANDROID_JAR" || ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
+          test -f "$ANDROID_JAR" || { echo "android.jar missing:"; ls "$ANDROID_HOME/platforms/"; exit 1; }
           D8_JAR="$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           test -f "$D8_JAR" || { echo "d8.jar missing:"; ls "$ANDROID_HOME/build-tools/"; exit 1; }
-          which javac java jar || true
           javac -encoding UTF-8 --release 11 -classpath "$ANDROID_JAR" \
             -d feasd-java/build/classes \
             feasd-java/src/com/sony/feas/daemon/Main.java \
+            feasd-java/src/com/sony/feas/daemon/FeasBinderService.java \
+            feasd-java/src/com/sony/feas/daemon/FrameFlowMonitor.java \
             feasd-java/src/com/sony/feas/daemon/HmdController.java
           echo "JAVAC_EXIT=$?"
           find feasd-java/build/classes -name '*.class' | head -5
           java -cp "$D8_JAR" com.android.tools.r8.D8 \
-            --release --min-api 31 \
+            --release --min-api 35 \
             --output feasd-java/build/dex \
             $(find feasd-java/build/classes -name '*.class')
           echo "D8_EXIT=$?"
@@ -95,10 +99,9 @@ jobs:
           cp feasd-java/feasd.jar module/feasd.jar
           cp overlay/build/outputs/apk/release/*.apk module/system/product/overlay/pdx234-resolution-frameworkres-overlay.apk
           python3 - <<'EOF'
-          import zipfile, os, glob
+          import zipfile, os
           out = 'dist/FEAS-allinone.zip'
           if os.path.exists(out): os.remove(out)
-          # stable permission mapping
           files = []
           for root, dirs, names in os.walk('module'):
               for n in names:
@@ -116,6 +119,8 @@ jobs:
           bad = [r for r,_,_ in files if '\\' in r]
           print('entries:', len(files), 'backslash:', bad)
           EOF
+          echo "=== module zip 内容验证 ==="
+          unzip -l dist/FEAS-allinone.zip | grep -E 'feasd.jar|service.sh|customize.sh|module.prop|sepolicy.rule|overlay|apk'
           ls -la dist/
 
       - uses: actions/upload-artifact@v4

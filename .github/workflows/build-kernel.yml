@@ -1,82 +1,94 @@
-name: Build kernel with perf_mgr (GKI 5.15)
+name: Build kernel boot image (XQ-DQ72, 550M GPU cap)
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'kernel/**'
+      - 'kernel_platform/**'
       - '.github/workflows/build-kernel.yml'
-
-permissions:
-  contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch GKI 5.15 kernel tree
-        run: |
-          git clone --depth 1 --branch android13-5.15 \
-            https://github.com/aosp-mirror/kernel_common.git gki
-          echo "kernel tree fetched"
-
-      - name: Integrate perf_mgr driver
-        run: |
-          mkdir -p gki/drivers/misc/perf_mgr
-          cp kernel/perf_mgr.c kernel/perf_mgr.h kernel/Kconfig gki/drivers/misc/perf_mgr/
-          # expose the Kconfig symbol from drivers/misc
-          grep -q 'source "drivers/misc/perf_mgr/Kconfig"' gki/drivers/misc/Kconfig || \
-            echo 'source "drivers/misc/perf_mgr/Kconfig"' >> gki/drivers/misc/Kconfig
-          cat >> gki/drivers/misc/perf_mgr/Makefile <<'EOF'
-          obj-$(CONFIG_PERF_MGR) += perf_mgr.o
-          EOF
-          grep -q 'CONFIG_PERF_MGR=y' gki/arch/arm64/configs/gki_defconfig || \
-            echo 'CONFIG_PERF_MGR=y' >> gki/arch/arm64/configs/gki_defconfig
-          echo "driver integrated"
-
-      - name: Install build dependencies
+      - name: Install toolchain (clang-14 + lld + dtc)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential flex bison libssl-dev libelf-dev \
-            bc python3 unzip zip device-tree-compiler
-          echo "deps installed"
+            clang-14 lld-14 llvm-14 binutils build-essential \
+            flex bison libssl-dev libelf-dev bc python3 lz4 xz-utils \
+            device-tree-compiler
+          # unversioned llvm tool symlinks (LLVM=1 build needs plain names)
+          for t in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump \
+                   llvm-readelf llvm-size llvm-strip llvm-as llvm-ranlib llvm-strings; do
+            sudo ln -sf /usr/bin/$t-14 /usr/local/bin/$t
+          done
+          clang --version | head -1
+          ld.lld --version | head -1
 
-      - name: Build kernel (GKI arm64 defconfig, LLVM)
-        working-directory: gki
+      - name: Prepare out tree with saved config
+        working-directory: kernel_platform
         run: |
-          export PATH=/usr/lib/llvm-18/bin:$PATH
-          make ARCH=arm64 LLVM=1 gki_defconfig
-          make ARCH=arm64 LLVM=1 -j$(nproc) Image vmlinux 2>&1 | tail -20
-          ls -la arch/arm64/boot/Image vmlinux
+          mkdir -p out/gki_kernel/common
+          # config_launchboost_550_base.config == config extracted from the
+          # verified-on-device kernel (launchboost #5, IKCONFIG). Preserved
+          # exactly so CI rebuilds the same kernel.
+          cp config_launchboost_550_base.config out/gki_kernel/common/.config
+          make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
+            olddefconfig 2>&1 | tail -5
+          grep -E '^CONFIG_(PERF_MGR|KSU|LTO_CLANG_THIN|ARM64)=' \
+            out/gki_kernel/common/.config
 
-      - name: Verify perf_mgr built-in
-        working-directory: gki
+      - name: Build kernel Image
+        working-directory: kernel_platform
         run: |
-          grep -E '^CONFIG_PERF_MGR' .config
-          grep -q 'CONFIG_PERF_MGR=y' .config && echo "perf_mgr built-in OK" || \
-            (grep -E '^CONFIG_PERF_MGR' .config; exit 1)
+          make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
+            -j$(nproc) Image 2>&1 | tail -30
+          ls -la out/gki_kernel/common/arch/arm64/boot/Image
 
-      - name: Package artifacts
+      - name: Build Image.lz4 (bootloader-preferred compression)
+        working-directory: kernel_platform
         run: |
-          mkdir -p dist
-          cp gki/arch/arm64/boot/Image dist/Image
-          cp gki/vmlinux dist/vmlinux
-          cp gki/.config dist/gki_defconfig_effective.config
-          cp kernel/perf_mgr.c kernel/perf_mgr.h dist/
-          ls -la dist/
+          make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
+            Image.lz4 2>&1 | tail -5 || true
+          ls -la out/gki_kernel/common/arch/arm64/boot/Image.lz4 2>/dev/null || true
+
+      - name: Package boot img (swap kernel into boot template)
+        run: |
+          python3 - <<'EOF'
+          import struct
+          src = 'kernel_platform/boot_base.img'      # verified-flashable template
+          newk = 'kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image'
+          out = 'boot_launchboost_550.img'
+          old = open(src, 'rb').read()
+          header = old[:4096]
+          assert header[:8] == b'ANDROID!', 'bad boot template'
+          k = open(newk, 'rb').read()
+          h = bytearray(header)
+          struct.pack_into('<I', h, 8, len(k))       # update kernel_size
+          img = bytes(h) + k
+          open(out, 'wb').write(img)
+          print('boot img bytes:', len(img))
+          print('kernel bytes :', len(k))
+          assert len(img) < 100663296, 'exceeds boot_a partition (96MB)'
+          print('OK: fits boot_a partition')
+          EOF
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kernel-with-perfmgr
-          path: dist/
+          name: boot_launchboost_550
+          path: |
+            boot_launchboost_550.img
+            kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image
+            kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image.lz4
+            kernel_platform/out/gki_kernel/common/.config
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Image
+          files: boot_launchboost_550.img
           generate_release_notes: true
