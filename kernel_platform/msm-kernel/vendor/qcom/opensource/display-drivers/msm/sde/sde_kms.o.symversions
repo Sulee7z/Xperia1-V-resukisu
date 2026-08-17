@@ -1,0 +1,3 @@
+__crc___tracepoint_tracing_mark_write = 0x8057cf2c;
+__crc___traceiter_tracing_mark_write = 0x55301a8b;
+__crc___SCK__tp_func_tracing_mark_write = 0xfb892b56;

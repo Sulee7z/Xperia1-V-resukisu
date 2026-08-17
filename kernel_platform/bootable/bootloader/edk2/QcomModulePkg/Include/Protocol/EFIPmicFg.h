@@ -1,0 +1,1 @@
+../../../../../BOOT.MXF.2.1.1/boot_images/boot/QcomPkg/Include/Protocol/EFIPmicFg.h

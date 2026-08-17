@@ -1,0 +1,6 @@
+__crc_incell_get_power_status = 0xa1f52e1e;
+__crc_incell_control_mode = 0x66946c97;
+__crc_incell_power_lock_ctrl = 0x36f22d41;
+__crc_incell_get_display_sod_mode = 0x8ddfe8a7;
+__crc_incell_control_touch_power = 0x650f07b3;
+__crc_incell_get_panel_name = 0x057f409a;

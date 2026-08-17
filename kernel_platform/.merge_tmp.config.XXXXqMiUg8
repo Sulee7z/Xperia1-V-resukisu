@@ -1,0 +1,35 @@
+CONFIG_DEVTMPFS=y
+# Power saving & performance (ported from ryncsn/android-common-kernel android13-5.15-silsrc-yodo-0.2)
+CONFIG_SUSPEND_SKIP_SYNC=y
+CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
+# MGLRU - Multi-Gen LRU (better memory reclaim, smoother under pressure)
+CONFIG_LRU_GEN=y
+CONFIG_LRU_GEN_ENABLED=y
+# BBR TCP congestion control (faster & smoother network)
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_DEFAULT_BBR=y
+# ReSukiSU (KSU) - source integrated
+CONFIG_KSU=y
+CONFIG_KSU_TRACEPOINT_HOOK=y
+CONFIG_KSU_TOOLKIT_SUPPORT=y
+CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
+# ---- SUSFS (KSU_SUSFS inline hook, integrated from susfs4ksu gki-android13-5.15 v2.2.0) ----
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=n
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
+# ---- Safe power saving (does NOT affect cgroup freezer / tombstone freeze) ----
+# zram: zstd compression (better ratio than lzo-rle default) + writeback
+CONFIG_ZRAM_DEF_COMP_ZSTD=y
+# CONFIG_ZRAM_DEF_COMP_LZORLE is not set
+CONFIG_ZRAM_DEF_COMP="zstd"
+CONFIG_ZRAM_WRITEBACK=y
+# RCU: NOCB already default in GKI (CONFIG_RCU_NOCB_CPU=y) - keep as is
+# No CPUFREQ governor / cpuidle depth changes - freezer latency safety

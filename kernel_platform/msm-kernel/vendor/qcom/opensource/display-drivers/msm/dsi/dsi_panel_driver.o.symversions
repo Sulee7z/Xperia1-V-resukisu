@@ -1,0 +1,3 @@
+__crc_drm_register_client = 0xd83ae4e0;
+__crc_drm_unregister_client = 0x9af9d34a;
+__crc_drm_notifier_call_chain = 0xc3f5d24a;

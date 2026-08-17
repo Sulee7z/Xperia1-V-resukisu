@@ -1,0 +1,3 @@
+__crc_msm_hdcp_register_cb = 0x6da1136d;
+__crc_msm_hdcp_notify_topology = 0x130e52a0;
+__crc_msm_hdcp_cache_repeater_topology = 0xccebd443;
