@@ -1,6 +1,6 @@
 # Gradle / Android
 .gradle/
-build/
+userspace/build/
 local.properties
 .idea/
 *.iml
