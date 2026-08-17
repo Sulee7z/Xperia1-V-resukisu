@@ -33,6 +33,12 @@ jobs:
       - name: Prepare out tree with saved config
         working-directory: kernel_platform
         run: |
+          # ReSukiSU Kbuild requires KSU_SRC/../.git (KernelSU as git repo)
+          cd KernelSU
+          git init -q
+          git add -A
+          git -c user.email=ci@local -c user.name=ci commit -qm init
+          cd ..
           mkdir -p out/gki_kernel/common
           # config extracted from the verified-on-device kernel (IKCONFIG).
           # CI rebuilds exactly this kernel: GPU 550M cap, 680M only on jank.
