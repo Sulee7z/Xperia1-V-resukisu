@@ -1,0 +1,1 @@
+cmd_/root/kernel-e/kernel_platform/msm-kernel/vendor/qcom/opensource/display-drivers/msm/modules.order := {   echo /root/kernel-e/kernel_platform/msm-kernel/vendor/qcom/opensource/display-drivers/msm/msm_drm.ko; :; } | awk '!x[$$0]++' - > /root/kernel-e/kernel_platform/msm-kernel/vendor/qcom/opensource/display-drivers/msm/modules.order
