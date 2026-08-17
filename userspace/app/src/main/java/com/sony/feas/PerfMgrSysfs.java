@@ -2,6 +2,7 @@ package com.sony.feas;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -9,14 +10,17 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 
 /**
- * 内核 perf_manager 驱动访问工具。
+ * 内核 perf_manager 驱动访问工具 —— v3.1 Binder-only。
  * 独立于 Xposed 模块,app 和模块都可调用。
+ *
+ * v3.1:控制一律走 Binder(daemon 已确认成功),删除 su 兜底。
+ * setManualFps/setEnabled 失败时仅记录 prefs,不 spawn su。
+ * 保留:只读内核 fps/enable(sysfs 0666 可读,非兜底)。
  */
 public final class PerfMgrSysfs {
 
+    private static final String TAG = "FEAS-SYSFS";
     private static final String SYSFS_PATH = "/sys/kernel/perf_manager";
-    private static final String CONFIG_DIR = "/data/adb/feas";
-    private static final String CONFIG_FILE = CONFIG_DIR + "/fps_config";
     private static final String PREF_NAME = "feas_prefs";
     private static final String KEY_MANUAL_FPS = "manual_fps";
     private static final String KEY_ENABLED = "enabled";
@@ -74,31 +78,21 @@ public final class PerfMgrSysfs {
         return p.getInt(KEY_MANUAL_FPS, 0);
     }
 
-    /** 设置手动目标帧率(0 = 自动) */
+    /** 设置手动目标帧率(0 = 自动)。Binder-only,失败静默。 */
     public static void setManualFps(int fps) {
         SharedPreferences p = prefs();
         if (p != null) p.edit().putInt(KEY_MANUAL_FPS, fps).apply();
-        execSu("mkdir -p " + CONFIG_DIR);
-        execSu("echo " + fps + " > " + CONFIG_FILE);
-        if (fps > 0) {
-            execSu("echo " + fps + " > " + SYSFS_PATH + "/fps");
+        if (!FeasBinderClient.setManualFps(fps)) {
+            Log.w(TAG, "setManualFps(" + fps + ") FAILED (daemon binder 不可用)");
         }
     }
 
-    /** 设置模块开关 */
+    /** 设置模块开关。Binder-only,失败静默。 */
     public static void setEnabled(boolean enable) {
         SharedPreferences p = prefs();
         if (p != null) p.edit().putBoolean(KEY_ENABLED, enable).apply();
-        execSu("echo " + (enable ? 1 : 0) + " > " + SYSFS_PATH + "/enable");
-    }
-
-    /** 通过 su 执行命令 */
-    public static void execSu(String cmd) {
-        try {
-            Process p = new ProcessBuilder("su", "-c", cmd)
-                    .redirectErrorStream(true).start();
-            p.waitFor();
-        } catch (Throwable ignored) {
+        if (!FeasBinderClient.setEnabled(enable)) {
+            Log.w(TAG, "setEnabled(" + enable + ") FAILED (daemon binder 不可用)");
         }
     }
 }

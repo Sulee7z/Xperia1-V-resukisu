@@ -8,7 +8,7 @@ LATESTARTSERVICE=true
 
 # Compatible with both Magisk (ui_print) and KernelSU (ui_print)
 if command -v ui_print >/dev/null 2>&1; then
-    ui_print "- FEAS v0.6.1 (merged resolution unlock)"
+    ui_print "- FEAS v3.0 (Binder event-driven)"
     if [ -f "$MODPATH/app-debug.apk" ]; then
         ui_print "- Bundled APK ready: app-debug.apk"
     else
@@ -16,7 +16,7 @@ if command -v ui_print >/dev/null 2>&1; then
     fi
 else
     # KernelSU: no ui_print, log to kmsg
-    echo "FEAS: installing v0.6.1" >/dev/kmsg 2>/dev/null
+    echo "FEAS: installing v3.0" >/dev/kmsg 2>/dev/null
 fi
 
 # Set correct perms for overlay APK (must be world-readable for RRO scan)

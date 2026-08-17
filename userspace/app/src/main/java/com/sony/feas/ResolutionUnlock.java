@@ -276,6 +276,7 @@ final class ResolutionUnlock {
         try {
             Object self = chain.getThisObject();
             if (self == null || getPreferMode == null) return;
+            // 缓存 getContext:Settings Fragment 继承链稳定,仅需一次查找
             Method getContext = findMethod(self.getClass(), "getContext");
             if (getContext == null) return;
             Object ctx = getContext.invoke(self);

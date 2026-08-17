@@ -17,6 +17,36 @@ captures/
 # ...except the gradle wrapper jar (required to bootstrap the build)
 !userspace/gradle/wrapper/gradle-wrapper.jar
 
+# ...except the boot packaging template (required for CI boot build)
+!kernel_platform/boot_base.img
+
+# kernel_platform build trees / toolchains / outputs
+kernel_platform/out/
+kernel_platform/out-opt/
+kernel_platform/prebuilts/
+kernel_platform/dist/
+kernel_platform/*.log
+kernel_platform/*.cmd
+*.o
+*.a
+*.dtb
+*.dtbo
+*.pyc
+__pycache__/
+kernel_platform/common/arch/arm64/boot/Image
+kernel_platform/common/arch/arm64/boot/Image.gz
+kernel_platform/common/arch/arm64/boot/Image.lz4
+kernel_platform/vmlinux
+kernel_platform/System.map
+kernel_platform/.config
+kernel_platform/include/generated/
+kernel_platform/out-gki/
+
+# source backups
+.bak_*/
+*.bak_*
+*.orig
+
 # misc
 *.log
 .DS_Store

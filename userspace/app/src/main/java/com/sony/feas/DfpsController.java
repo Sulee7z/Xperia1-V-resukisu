@@ -2,61 +2,45 @@ package com.sony.feas;
 
 import android.util.Log;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-
 /**
- * dfps (dynamic refresh rate) controller for FEAS.
+ * dfps (dynamic refresh rate) controller for FEAS —— v3.1 Binder-only。
  *
- * The actual refresh-rate switching is done by the root daemon (feasd):
- *   - listens /dev/input/event4 touch events
- *   - touch -> 120 Hz (setprop persist.sony.user_fpsmode true + broadcast)
- *   - idle 4s -> 60 Hz (false + broadcast)
- *   - GPU compensation: 60Hz mode keeps touch_gpu_mhz=680 (same as 120Hz perf)
- *
- * This class only toggles the daemon's enable state via a control file,
- * so the UI can turn dfps on/off without restarting the daemon.
+ * v3.1:daemon Binder 注册已确认成功,删除 su 兜底(用户要求)。
+ * 控制一律走 TX_SET_DFPS,binder 不可用时静默失败(不 spawn su)。
  */
 public final class DfpsController {
 
     private static final String TAG = "FEAS-DFPS";
-    private static final String CTRL_FILE = "/data/adb/modules/feas/dfps_enabled";
 
     private static volatile boolean enabled = true;
 
     private DfpsController() {}
 
-    /** Enable/disable dfps by writing the daemon's control file. */
+    /** Enable/disable dfps。Binder-only,失败静默(不 spawn su)。 */
     public static void setEnabled(boolean on) {
         enabled = on;
-        execSu("echo " + (on ? "1" : "0") + " > " + CTRL_FILE);
-        Log.i(TAG, "dfps " + (on ? "enabled" : "disabled") + " (ctrl file written)");
+        if (FeasBinderClient.setDfps(on)) {
+            Log.i(TAG, "dfps " + (on ? "enabled" : "disabled") + " (binder)");
+        } else {
+            Log.w(TAG, "dfps " + (on ? "enabled" : "disabled")
+                    + " FAILED (daemon binder 不可用)");
+        }
     }
 
     public static boolean isEnabled() {
         return enabled;
     }
 
-    /** Not used anymore: daemon listens /dev/input directly. */
+    /* ---------- 不再使用(daemon 事件驱动,app 无需轮询) ---------- */
+
+    /** @deprecated daemon 直接监听 /dev/input,app 无需上报。 */
     public static void onFrameActivity() {}
 
-    /** Not used anymore: daemon handles idle timeout. */
+    /** @deprecated daemon 状态机自行判定 idle。 */
     public static void onIdle() {}
 
+    /** @deprecated 状态经 FeasBinderClient.getState() 查询。 */
     public static boolean isHighRefresh() {
         return false;
-    }
-
-    private static void execSu(String cmd) {
-        try {
-            Process p = new ProcessBuilder("su", "-c", cmd)
-                    .redirectErrorStream(true).start();
-            BufferedReader r = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()));
-            while (r.readLine() != null) { /* drain */ }
-            r.close();
-            p.waitFor();
-        } catch (Throwable ignored) {
-        }
     }
 }

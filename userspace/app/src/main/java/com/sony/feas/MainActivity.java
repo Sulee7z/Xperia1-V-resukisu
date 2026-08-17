@@ -149,8 +149,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 hmdEnabled = !hmdEnabled;
-                execSu("echo " + (hmdEnabled ? "1" : "0")
-                        + " > /data/adb/modules/feas/hmd_enabled");
+                FeasBinderClient.setHmd(hmdEnabled);
                 refreshStatus();
                 Toast.makeText(MainActivity.this,
                         hmdEnabled ? "240Hz MBR: 触摸时插黑,运动无拖影(亮度略降)"
@@ -365,51 +364,33 @@ public class MainActivity extends Activity {
     }
 
     private void loadState() {
-        currentFps = PerfMgrSysfs.getManualFps();
-        currentEnabled = PerfMgrSysfs.isEnabled();
-        dfpsEnabled = DfpsController.isEnabled();
-        hmdEnabled = readCtrlFile("/data/adb/modules/feas/hmd_enabled");
-    }
-
-    /** 读 daemon 控制文件(经 su),不存在或异常视为 false。 */
-    private boolean readCtrlFile(String path) {
-        try {
-            Process p = new ProcessBuilder("su", "-c", "cat " + path + " 2>/dev/null")
-                    .redirectErrorStream(true).start();
-            BufferedReader r = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()));
-            String line = r.readLine();
-            r.close();
-            p.waitFor();
-            return line != null && line.trim().equals("1");
-        } catch (Throwable t) {
-            return false;
+        // Binder 一次取回全部状态,不再多次 su cat(零进程 spawn)
+        int[] st = FeasBinderClient.getState();
+        if (st != null) {
+            currentEnabled = st[0] == 1;
+            dfpsEnabled = st[1] == 1;
+            hmdEnabled = st[2] == 1;
+            currentFps = st[3];
+        } else {
+            // daemon 不可用:仅用本地 prefs 默认(不再 su 读文件,零兜底)
+            currentFps = PerfMgrSysfs.getManualFps();
+            currentEnabled = PerfMgrSysfs.isEnabled();
+            dfpsEnabled = DfpsController.isEnabled();
+            hmdEnabled = false;  // daemon 不可用,默认关(无 su 兜底)
         }
     }
 
-    /** 从内核 diag 读统计(frame_reports/frame_ok),root 可读,无 SELinux 问题 */
-    private long[] readKernelStats() {
+    /**
+     * 从 Binder 读统计(GET_STATE 附带):st[7]=frameTotal, st[8]=reports, st[9]=fails。
+     * 替代旧的内核 diag su cat(统计走 Binder 通道,零进程 spawn,无 SELinux 问题)。
+     */
+    private long[] readStats() {
         long[] stats = {0, 0, 0};
-        try {
-            Process p = new ProcessBuilder("su", "-c",
-                    "cat /sys/kernel/perf_manager/diag 2>/dev/null")
-                    .redirectErrorStream(true).start();
-            BufferedReader r = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()));
-            String line;
-            while ((line = r.readLine()) != null) {
-                if (line.startsWith("frame_total=")) {
-                    stats[0] = Long.parseLong(
-                            line.substring("frame_total=".length()));
-                } else if (line.startsWith("frame_ok=")) {
-                    stats[1] = Long.parseLong(
-                            line.substring("frame_ok=".length()));
-                }
-            }
-            r.close();
-            p.waitFor();
-            stats[2] = 0;  // sysfs 写入无失败路径
-        } catch (Throwable ignored) {
+        int[] st = FeasBinderClient.getState();
+        if (st != null && st.length >= 10) {
+            stats[0] = st[7];  /* 帧数(模块累计) */
+            stats[1] = st[8];  /* 成功(binder 送达批数) */
+            stats[2] = st[9];  /* 失败(binder 帧上报失败) */
         }
         return stats;
     }
@@ -451,7 +432,7 @@ public class MainActivity extends Activity {
         sb.append("\n\n");
 
         sb.append("上报统计:\n");
-        long[] st = readKernelStats();
+        long[] st = readStats();
         sb.append("  帧数: ").append(st[0]).append("\n");
         sb.append("  成功: ").append(st[1]).append("\n");
         sb.append("  失败: ").append(st[2]).append("\n");

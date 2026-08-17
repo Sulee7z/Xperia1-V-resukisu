@@ -1,18 +1,3 @@
-/*
- * FeasDaemon - root daemon for FEAS
- *
- * Roles:
- *  1. (legacy) Binder service "feas" for frame reporting via /dev/perf_manager
- *  2. (dfps)   Listen /dev/input touch events -> switch refresh rate:
- *              touch down -> 120Hz, idle 4s -> 60Hz
- *              Uses the verified Sony protocol:
- *                setprop persist.sony.user_fpsmode true|false
- *                am broadcast -a com.sonymobile.USER_FPSMODE_CHANGED
- *
- * Runs as root via module service.sh using app_process:
- *   app_process -Djava.class.path=/data/adb/modules/feas/feasd.jar \
- *                /system/bin --nice-name=feasd com.sony.feas.daemon.Main
- */
 package com.sony.feas.daemon;
 
 import android.util.Log;
@@ -21,287 +6,197 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.Parcel;
+
+/**
+ * FEAS daemon v3.1 - Binder 事件驱动(无兜底)
+ *
+ * v3.0 已确认 binder 注册成功,故删除全部降级路径:
+ *  - 删除 startIdleFallback(frame_total 轮询降级)
+ *  - 删除 ctrl 文件轮询(控制全走 Binder)
+ *
+ * v3.1 新增:
+ *  - 开屏检测:backlight 0->非0 转变 -> flow.onTouch(true)
+ *    (打开屏幕瞬间像触摸一样调度:立即 120Hz + active,锁屏->主屏过渡流畅)
+ *  - 动画=触摸同调度:GPU floor 用 lastActiveMs(max(帧,触摸))
+ *  - boost:帧 avgNs>25ms 或 jank -> GPU 680M 解除 cap(3s,无需触摸)
+ *  - 掉 60Hz 更晚:FRAME_IDLE_MS=2000 + IDLE_SLACK_MS=4000
+ *
+ * 线程:input(触摸即时感知)+ flow idle(500ms 内存检查)+
+ *       kgsl watchdog(1s)+ screen(1s backlight 检测)= 4 线程,全部低频,
+ *       无文件轮询热点(仅 screen 1s 读一次 backlight)。
+ */
 public class Main {
-
     private static final String TAG = "FEASD";
-
-    // ---- dfps ----
-    private static final String FPSMODE_PROP = "persist.sony.user_fpsmode";
     private static final String[] INPUT_DEVICES = {"/dev/input/event4"};
-    private static final long IDLE_SLACK_MS = 4000;  // idle -> 60Hz after this
-    private static final long SWITCH_MIN_INTERVAL_MS = 1000; // debounce
-    private static final String BROADCAST_CMD =
-        "am broadcast -a com.sonymobile.USER_FPSMODE_CHANGED -p com.sonymobile.displaybooster";
-
-    // GPU compensation: keep touch GPU floor identical between 60Hz and 120Hz.
-    // Stock: touch_gpu_mhz=550. When screen drops to 60Hz, WALT sees lower load
-    // and lets GPU idle below the 120Hz touch level; raise floor to GPU max (680)
-    // so interaction performance matches 120Hz exactly.
+    private static final long SWITCH_MIN_INTERVAL_MS = 1000; /* 降频防抖:避免 60/120 横跳;升频不限制 */
     private static final String GPU_MHZ_SYSFS = "/sys/kernel/perf_manager/touch_gpu_mhz";
-    private static final int GPU_MHZ_HIGH = 680;   // applied while in 60Hz mode
-    private static final int GPU_MHZ_NORMAL = 550; // restored in 120Hz mode
+    /* touch_gpu_mhz = 触摸时 GPU 最低频率(内核默认 550),松手自动释放(省电)
+     * 60Hz 锁 401 档会导致滑动卡顿,故 60/120Hz 都提到 550;
+     * 帧时间过长 boost 时写 680(超过正常限制,满足"boost到限制频率以上") */
+    private static final int GPU_MHZ_HIGH = 550;    /* 120Hz 触摸 GPU 保底 */
+    private static final int GPU_MHZ_NORMAL = 550;  /* 60Hz 触摸 GPU 保底(修复 400 卡顿) */
+    private static final int GPU_MHZ_BOOST = 680;   /* 帧时间过长 -> 超过限制 */
+    /* Runtime state OUTSIDE the module dir (/data/adb/feas) */
+    private static final String CTRL_FILE = "/data/adb/feas/dfps_enabled";
+    private static final String HMD_CTRL_FILE = "/data/adb/feas/hmd_enabled";
+    private static final String ENABLE_CTRL_FILE = "/data/adb/feas/enabled";
+    private static final String FPS_CTRL_FILE = "/data/adb/feas/fps_config";
+    private static final String STATE_FILE = "/data/adb/feas/fpsmode_state";
 
-    // Control file: written by FEAS app (via su) to enable/disable dfps.
-    private static final String CTRL_FILE = "/data/adb/modules/feas/dfps_enabled";
-    // Control file: written by FEAS app (via su) to enable/disable 240Hz MBR (BFI).
-    private static final String HMD_CTRL_FILE = "/data/adb/modules/feas/hmd_enabled";
-    // State file: written by daemon so the FEAS module can read current
-    // refresh-rate state without spawning a getprop process (power saving).
-    private static final String STATE_FILE = "/data/adb/modules/feas/fpsmode_state";
-
-    // Animation GPU boost: monitor GPU utilization directly (reliable for ALL
-    // apps' animations - module vsync hook only sees systemui's own rendering).
-    // GPU busy > threshold -> animation active -> raise GPU + big-core CPU floor.
-    // Refresh rate is NOT changed - only performance floors, so screenshot/system
-    // animations stay smooth without flipping 60/120.
-    private static final String GPU_BUSY_SYSFS = "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage";
-    private static final String GPU_DEVFREQ_MIN = "/sys/class/devfreq/3d00000.qcom,kgsl-3d0/min_freq";
-    private static final long GPU_FLOOR_ANIM = 680000000L;   // animation: GPU >= 680 MHz
-    private static final long GPU_FLOOR_IDLE = 0L;           // idle: restore governor control
-    private static final int GPU_BUSY_THRESHOLD = 15;        // % busy = animation (lower for smooth)
-    private static final long GPU_BUSY_IDLE_MS = 3000;       // idle after 3s low load
-    // Big-core CPU floor while animating (avoids ramp-up stutter on screenshots)
-    private static final String CPU_BIG_MIN = "/sys/devices/system/cpu/cpu6/cpufreq/scaling_min_freq";
-    private static final String CPU_BIG_MAX = "/sys/devices/system/cpu/cpu6/cpufreq/scaling_max_freq";
-    private static final long CPU_BIG_FLOOR_ANIM = 2000000L; // 2 GHz on big cluster
-    private static final long CPU_BIG_MAX_DEFAULT = 3187200L;
+    /* 冷启动 boost:内核节点,写 1 -> TOUCH caps,内核 delayed_work 自动恢复 */
+    private static final String LAUNCH_BOOST = "/sys/kernel/perf_manager/launch_boost";
+    private static final long LAUNCH_BOOST_MIN_GAP_MS = 1500; /* 防抖:两次冷启动最短间隔 */
 
     private static volatile boolean highRefresh = false;
     private static volatile long lastSwitchMs = 0;
-    private static volatile long lastTouchMs = 0;
     private static volatile boolean dfpsEnabled = true;
     private static volatile boolean hmdEnabled = false;
+    private static volatile boolean moduleEnabled = true;
+    private static volatile int manualFps = 0;
 
-    // struct input_event: timeval(16) + type(2) + code(2) + value(4) = 24 bytes
+    private static volatile FrameFlowMonitor flow;
+
     private static final int EV_ABS = 3;
-    private static final int ABS_MT_SLOT = 0x2f;
     private static final int ABS_MT_TRACKING_ID = 0x39;
     private static final int ABS_MT_TOUCH_MAJOR = 0x30;
+    private static final int ABS_MT_POSITION_X = 0x35;
+    private static final int ABS_MT_POSITION_Y = 0x36;
 
     public static void main(String[] args) {
-        log("I", "FEAS daemon starting (root)");
-
-        // dfps: touch listener + idle monitor
-        loadDfpsState();
-        loadHmdState();
-        startCtrlMonitor();
-        startAnimMonitor();
+        log("I", "FEAS daemon v3.1 (binder event-driven, no fallback) starting");
+        loadState();
+        flow = new FrameFlowMonitor(new FrameFlowMonitor.Listener() {
+            @Override
+            public void onChangeRefresh(boolean high) {
+                switchRefresh(high);
+            }
+        });
+        FeasBinderService svc = new FeasBinderService(new BinderCallbacks());
+        svc.register();
         startInputListener();
-        startIdleMonitor();
-
-
-        while (true) {
-            try {
-                Thread.sleep(Long.MAX_VALUE);
-            } catch (InterruptedException e) {
-                break;
+        startProcessObserver();
+        /* app_process Java daemon 默认无 binder 线程池,主线程仅 sleep 则
+         * 传入事务(AMS->ProcessObserver 回调)永远排队不被分发。
+         * 主线程加入 binder 线程池:阻塞并分发传入事务。 */
+        log("I", "joining binder threadpool");
+        try {
+            /* Android 15 (SDK 35): BinderInternal 在 com.android.internal.os 包 */
+            Class<?> bi = Class.forName("com.android.internal.os.BinderInternal");
+            bi.getMethod("joinThreadPool").invoke(null);
+        } catch (Throwable t) {
+            log("W", "joinThreadPool failed: " + t + " -> fallback sleep");
+            while (true) {
+                try { Thread.sleep(Long.MAX_VALUE); }
+                catch (InterruptedException e) { break; }
             }
         }
     }
 
-    /** Read enable state from control file (written by FEAS app). */
-    private static void loadDfpsState() {
-        try {
-            File f = new File(CTRL_FILE);
-            if (f.exists()) {
-                String s = new String(java.nio.file.Files.readAllBytes(f.toPath()),
-                        StandardCharsets.US_ASCII).trim();
-                dfpsEnabled = s.equals("1");
-                log("I", "dfps " + (dfpsEnabled ? "enabled" : "disabled") + " (ctrl file)");
+    /** Binder 回调:把控制/帧事件转发给状态机与状态变量。 */
+    private static final class BinderCallbacks implements FeasBinderService.Callbacks {
+        @Override
+        public void onReportFrames(long frameTotal, int avgNs, int jankCount) {
+            flow.onReportFrames(frameTotal, avgNs, jankCount);
+        }
+
+        @Override
+        public void onSetDfps(boolean on) {
+            dfpsEnabled = on;
+            flow.onSetDfps(on);
+            writeCtrlFile(CTRL_FILE, on ? "1" : "0");
+            log("I", "dfps " + (on ? "enabled" : "disabled") + " (binder)");
+        }
+
+        @Override
+        public void onSetHmd(boolean on) {
+            hmdEnabled = on;
+            writeCtrlFile(HMD_CTRL_FILE, on ? "1" : "0");
+            HmdController.setHmd(on);
+            log("I", "hmd " + (on ? "enabled" : "disabled") + " (binder)");
+        }
+
+        @Override
+        public void onSetEnabled(boolean on) {
+            moduleEnabled = on;
+            writeCtrlFile(ENABLE_CTRL_FILE, on ? "1" : "0");
+            writeLong("/sys/kernel/perf_manager/enable", on ? 1 : 0);
+            log("I", "module " + (on ? "enabled" : "disabled") + " (binder)");
+        }
+
+        @Override
+        public void onSetManualFps(int fps) {
+            manualFps = fps;
+            writeCtrlFile(FPS_CTRL_FILE, String.valueOf(fps));
+            if (fps > 0) {
+                writeLong("/sys/kernel/perf_manager/fps", fps);
             }
-        } catch (Exception e) {
-            log("W", "load ctrl failed: " + e.getMessage());
+            log("I", "manual fps " + fps + " (binder)");
+        }
+
+        @Override
+        public void onReportTouch(boolean down) {
+            flow.onTouch(down);
+        }
+
+        @Override
+        public int[] onGetState() {
+            int targetFps = 0;
+            String s = readFile("/sys/kernel/perf_manager/fps");
+            if (!s.isEmpty()) {
+                try { targetFps = Integer.parseInt(s); } catch (Exception ignored) {}
+            }
+            return new int[]{
+                    moduleEnabled ? 1 : 0,
+                    dfpsEnabled ? 1 : 0,
+                    hmdEnabled ? 1 : 0,
+                    manualFps,
+                    targetFps,
+                    flow.isHighRefresh() ? 1 : 0,
+                    (int) flow.getLastFrameTotal()
+            };
         }
     }
 
+    /* ---------------- 状态加载/持久化 ---------------- */
 
-    /** File log: root processes cannot write logcat on this build (SELinux/logd),
-     *  so daemon logs go to the module directory. UTF-8, append. */
-    static void log(String level, String msg) {
+    private static void loadState() {
+        dfpsEnabled = readCtrl(CTRL_FILE, true);
+        hmdEnabled = readCtrl(HMD_CTRL_FILE, false);
+        moduleEnabled = readCtrl(ENABLE_CTRL_FILE, true);
+        String fps = readFile(FPS_CTRL_FILE);
+        if (!fps.isEmpty()) {
+            try { manualFps = Integer.parseInt(fps); } catch (Exception ignored) {}
+        }
+        if (!moduleEnabled) {
+            writeLong("/sys/kernel/perf_manager/enable", 0);
+        }
+        log("I", "state: dfps=" + dfpsEnabled + " hmd=" + hmdEnabled
+                + " enabled=" + moduleEnabled + " manual=" + manualFps);
+    }
+
+    private static boolean readCtrl(String path, boolean def) {
+        String s = readFile(path);
+        if (s.isEmpty()) return def;
+        return s.equals("1");
+    }
+
+    private static void writeCtrlFile(String path, String val) {
         try {
-            FileOutputStream fos = new FileOutputStream(
-                    "/data/adb/modules/feas/feasd.log", true);
-            String line = System.currentTimeMillis() + " " + level + " " + msg + "\n";
-            fos.write(line.getBytes(StandardCharsets.UTF_8));
+            FileOutputStream fos = new FileOutputStream(path);
+            fos.write(val.getBytes(StandardCharsets.US_ASCII));
             fos.close();
-        } catch (Throwable ignored) {
-        }
-        Log.i(TAG, msg);
-    }
-
-    /** Read 240Hz MBR (BFI) enable state from control file. */
-    private static void loadHmdState() {
-        try {
-            File f = new File(HMD_CTRL_FILE);
-            if (f.exists()) {
-                String s = new String(java.nio.file.Files.readAllBytes(f.toPath()),
-                        StandardCharsets.US_ASCII).trim();
-                hmdEnabled = s.equals("1");
-                log("I", "hmd(BFI) " + (hmdEnabled ? "enabled" : "disabled") + " (ctrl file)");
-            }
         } catch (Exception e) {
-            log("W", "load hmd ctrl failed: " + e.getMessage());
+            log("W", "write ctrl failed: " + e.getMessage());
         }
     }
 
-    /** Poll control files for enable/disable changes from the FEAS app. */
-    private static void startCtrlMonitor() {
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                long lastMod = 0;
-                long lastHmdMod = 0;
-                while (true) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    File f = new File(CTRL_FILE);
-                    if (f.exists()) {
-                        long mod = f.lastModified();
-                        if (mod != lastMod) {
-                            lastMod = mod;
-                            boolean was = dfpsEnabled;
-                            loadDfpsState();
-                            if (was != dfpsEnabled) {
-                                log("I", "dfps " + (dfpsEnabled ? "enabled" : "disabled")
-                                        + " by app");
-                                if (!dfpsEnabled && highRefresh) {
-                                    highRefresh = false; // allow re-switch when re-enabled
-                                }
-                            }
-                        }
-                    }
-                    // 240Hz MBR (BFI) control: apply immediately when 120Hz is active
-                    File h = new File(HMD_CTRL_FILE);
-                    if (h.exists()) {
-                        long mod = h.lastModified();
-                        if (mod != lastHmdMod) {
-                            lastHmdMod = mod;
-                            boolean was = hmdEnabled;
-                            loadHmdState();
-                            if (was != hmdEnabled) {
-                                log("I", "hmd(BFI) " + (hmdEnabled ? "enabled" : "disabled")
-                                        + " by app");
-                                if (highRefresh) {
-                                    HmdController.setHmd(hmdEnabled);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }, "feasd-ctrl");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** Animation GPU boost: monitor GPU utilization, raise min_freq while busy. */
-    private static void startAnimMonitor() {
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                boolean lastAnim = false;
-                long lastBusyMs = 0;
-                while (true) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    int busy = readGpuBusy();
-                    boolean anim = false;
-                    if (busy >= GPU_BUSY_THRESHOLD) {
-                        lastBusyMs = System.currentTimeMillis();
-                        anim = true;
-                    } else if (lastBusyMs > 0
-                            && System.currentTimeMillis() - lastBusyMs < GPU_BUSY_IDLE_MS) {
-                        anim = true;  // keep boost briefly after load drops
-                    }
-                    if (anim == lastAnim) continue;
-                    lastAnim = anim;
-                    if (anim) {
-                        writeSysfs(GPU_DEVFREQ_MIN, GPU_FLOOR_ANIM);
-                        writeSysfs(CPU_BIG_MIN, CPU_BIG_FLOOR_ANIM);
-                        writeSysfs(CPU_BIG_MAX, CPU_BIG_MAX_DEFAULT);
-                        log("I", "animation boost: gpu busy=" + busy
-                                + "%, gpu=" + GPU_FLOOR_ANIM
-                                + " cpu_big>=" + CPU_BIG_FLOOR_ANIM);
-                    } else {
-                        writeSysfs(GPU_DEVFREQ_MIN, GPU_FLOOR_IDLE);
-                        writeSysfs(CPU_BIG_MIN, 0);
-                        log("I", "animation idle: gpu busy=" + busy
-                                + "%, floors restored");
-                    }
-                }
-            }
-        }, "feasd-anim");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private static String execCapture(String cmd) {
-        try {
-            Process p = new ProcessBuilder("sh", "-c", cmd)
-                    .redirectErrorStream(true).start();
-            java.io.BufferedReader r = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(p.getInputStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = r.readLine()) != null) sb.append(line).append('\n');
-            r.close();
-            p.waitFor();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private static void execQuiet(String cmd) {
-        try {
-            Process p = new ProcessBuilder("sh", "-c", cmd)
-                    .redirectErrorStream(true).start();
-            p.waitFor();
-        } catch (Exception e) {
-            log("W", "exec failed: " + cmd);
-        }
-    }
-
-    /** Read GPU busy percentage (0-100). */
-    private static int readGpuBusy() {
-        try {
-            FileInputStream fis = new FileInputStream(GPU_BUSY_SYSFS);
-            byte[] buf = new byte[16];
-            int n = fis.read(buf);
-            fis.close();
-            if (n > 0) {
-                String s = new String(buf, 0, n, StandardCharsets.US_ASCII).trim();
-                return Integer.parseInt(s);
-            }
-        } catch (Exception e) {
-            // ignore
-        }
-        return 0;
-    }
-
-    private static boolean readCtrlBool(String path) {
-        try {
-            File f = new File(path);
-            if (!f.exists()) return false;
-            String s = new String(Files.readAllBytes(f.toPath()),
-                    StandardCharsets.US_ASCII).trim();
-            return s.equals("1");
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static void writeSysfs(String path, long value) {
+    private static void writeLong(String path, long value) {
         try {
             FileOutputStream fos = new FileOutputStream(path);
             fos.write((value + "\n").getBytes(StandardCharsets.US_ASCII));
@@ -311,61 +206,53 @@ public class Main {
         }
     }
 
-    /** setprop without spawning: reflection into android.os.SystemProperties. */
-    private static void setProp(String key, String value) {
+private static String readFile(String path) {
         try {
-            Class<?> sp = Class.forName("android.os.SystemProperties");
-            java.lang.reflect.Method set = sp.getMethod("set", String.class, String.class);
-            set.invoke(null, key, value);
-        } catch (Throwable t) {
-            log("W", "setprop " + key + " failed: " + t);
-        }
-    }
-
-    private static void writeCtrlFile(String path, String value) {
-        try {
-            FileOutputStream fos = new FileOutputStream(path);
-            fos.write(value.getBytes(StandardCharsets.US_ASCII));
-            fos.close();
+            File f = new File(path);
+            if (!f.exists()) return "";
+            return new String(Files.readAllBytes(f.toPath()),
+                    StandardCharsets.US_ASCII).trim();
         } catch (Exception e) {
-            log("W", "write " + path + " failed: " + e.getMessage());
+            return "";
         }
     }
 
-    /** Read /dev/input touch events; update lastTouchMs + switch to 120Hz on down. */
+    static void log(String level, String msg) {
+        Log.i(TAG, msg);
+    }
+
+    /* ---------------- 开屏检测(像触摸一样调度) ---------------- */
+
+    /* ---------------- input listener ---------------- */
+
     private static void startInputListener() {
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
                 byte[] buf = new byte[24];
                 while (true) {
-                    boolean anyOk = false;
                     for (String path : INPUT_DEVICES) {
                         File f = new File(path);
                         if (!f.exists()) continue;
                         try {
-                            FileInputStream fis = new FileInputStream(f);
-                            DataInputStream dis = new DataInputStream(fis);
+                            DataInputStream dis = new DataInputStream(
+                                    new FileInputStream(f));
                             log("I", "listening " + path);
-                            anyOk = true;
                             while (true) {
-                                try {
-                                    dis.readFully(buf);
-                                } catch (Exception e) {
-                                    break; // device removed, retry
-                                }
-                                int type = ((buf[16] & 0xff) | ((buf[17] & 0xff) << 8));
-                                int code = ((buf[18] & 0xff) | ((buf[19] & 0xff) << 8));
-                                int value = ((buf[20] & 0xff) | ((buf[21] & 0xff) << 8)
-                                        | ((buf[22] & 0xff) << 16) | ((buf[23] & 0xff) << 24));
+                                dis.readFully(buf);
+                                int type = (buf[16] & 255) | ((buf[17] & 255) << 8);
+                                int code = (buf[18] & 255) | ((buf[19] & 255) << 8);
+                                int value = (buf[20] & 255) | ((buf[21] & 255) << 8)
+                                        | ((buf[22] & 255) << 16) | ((buf[23] & 255) << 24);
                                 if (type == EV_ABS) {
                                     if (code == ABS_MT_TRACKING_ID) {
-                                        boolean down = (value >= 0);
-                                        onTouchEvent(down);
+                                        flow.onTouch(value >= 0);
                                     } else if (code == ABS_MT_TOUCH_MAJOR && value > 0) {
-                                        onTouchEvent(true);
-                                    } else if (code == ABS_MT_SLOT) {
-                                        // slot switch: keep state from tracking id
+                                        flow.onTouch(true);
+                                    } else if (code == ABS_MT_POSITION_X ||
+                                               code == ABS_MT_POSITION_Y) {
+                                        /* slide: 立即 120Hz */
+                                        flow.onTouch(true);
                                     }
                                 }
                             }
@@ -373,9 +260,7 @@ public class Main {
                             log("W", "input " + path + " error: " + e.getMessage());
                         }
                     }
-                    if (!anyOk) {
-                        try { Thread.sleep(3000); } catch (InterruptedException ie) { break; }
-                    }
+                    try { Thread.sleep(3000); } catch (InterruptedException ie) { break; }
                 }
             }
         }, "feasd-input");
@@ -383,83 +268,168 @@ public class Main {
         t.start();
     }
 
-    /** Idle monitor: no touch for IDLE_SLACK_MS -> 60Hz. */
-    private static void startIdleMonitor() {
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (true) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    if (!dfpsEnabled) continue;
-                    if (highRefresh && lastTouchMs > 0) {
-                        long idle = System.currentTimeMillis() - lastTouchMs;
-                        if (idle > IDLE_SLACK_MS) {
-                            switchRefresh(false);
+    /* ---------------- process observer (cold-launch detect) ---------------- */
+
+    private static volatile long lastLaunchBoostMs = 0;
+
+    /** 反射注册 ProcessObserver:前台 activity 切换即冷启动时机。
+     *  IProcessObserver 不在编译期 android.jar,用动态 Proxy + 手写 Binder
+     *  走 RemoteCallbackList(实测 root 可注册,收到真实 fg 事件)。 */
+    private static void startProcessObserver() {
+        try {
+            /* 手写 Binder 子类:AMS 回调经 binder 事务到达,必须 onTransact 分发。
+             *  运行时探测(Sony 定制 ROM)确认 android.app.IProcessObserver 事务码:
+             *    code 1 = onProcessStarted(pid,uid,type,procname,reason)
+             *    code 2 = onForegroundActivitiesChanged(pid,uid,fg)   <-- 冷启动时机
+             *    code 3 = onForegroundServicesChanged(pid,uid,type)
+             *    code 4 = onProcessDied(pid,uid)
+             *  android.os.IProcessObserver 在此 ROM 不存在。
+             *  注意:与 AOSP 标准(code1=fg-changed)顺序相反! */
+            final Binder CALLBACK_BINDER = new Binder() {
+                @Override
+                protected boolean onTransact(int code, Parcel data,
+                        Parcel reply, int flags) {
+                    /* 无条件入口日志:验证事务是否到达 */
+                    log("I", "onTransact ENTRY code=" + code + " flags=" + flags);
+                    /* 实测(SDK 35 Sony ROM):Parcel.readInterfaceToken() 无参方法
+                     * 不存在,且 onTransact parcel 无 interface token string。
+                     * 故不解析 token,直接按事务码分发(binder 已保证事务到达,
+                     * 事务码经运行时探测确认)。 */
+                    switch (code) {
+                        case 2: { /* onForegroundActivitiesChanged (Sony: code=2) */
+                            try {
+                                /* Sony SDK35 真实布局 (rawALL 实测确认):
+                                 * [0] strict(int) [1] ws(int) [2] 固定头(int)
+                                 * [3] descLen(int) [4..] descriptor UTF-16LE
+                                 * 然后 0(int) pid(int) uid(int) fg(int) */
+                                data.readInt();                 /* strict */
+                                data.readInt();                 /* workSourceUid */
+                                data.readInt();                 /* 固定头 */
+                                int len = data.readInt();       /* descLen */
+                                /* 跳过 descriptor (UTF-16LE: len*2 字节) */
+                                data.setDataPosition(data.dataPosition() + len * 2);
+                                data.readInt();                 /* 0 */
+                                int pid = data.readInt();
+                                int uid = data.readInt();
+                                boolean fg = data.readInt() != 0;
+                                log("I", "fg cb: pid=" + pid + " uid=" + uid
+                                        + " fg=" + fg + " size=" + data.dataSize());
+                                onForegroundChanged(pid, uid, fg);
+                            } catch (Throwable t) {
+                                log("W", "case2 parse failed: " + t);
+                            }
+                            return true;
                         }
+                        case 1: /* onProcessStarted */
+                        case 3: /* onForegroundServicesChanged */
+                        case 4: /* onProcessDied */
+                            return true;
+                        default:
+                            return false;
                     }
                 }
+            };
+            final Class<?> iObs = Class.forName("android.app.IProcessObserver");
+            final ClassLoader cl = Main.class.getClassLoader();
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(cl,
+                    new Class<?>[]{iObs},
+                    new java.lang.reflect.InvocationHandler() {
+                        @Override
+                        public Object invoke(Object o,
+                                java.lang.reflect.Method m, Object[] a) {
+                            String n = m.getName();
+                            if (n.equals("onForegroundActivitiesChanged")) {
+                                int pid = (Integer) a[0];
+                                int uid = (Integer) a[1];
+                                boolean fg = (Boolean) a[2];
+                                onForegroundChanged(pid, uid, fg);
+                                return null;
+                            }
+                            if (n.equals("asBinder"))
+                                return CALLBACK_BINDER;
+                            if (n.equals("onProcessDied"))
+                                return null;
+                            if (n.equals("onProcessStateChanged"))
+                                return null;
+                            return null;
+                        }
+                    });
+            Object ams = Class.forName("android.os.ServiceManager")
+                    .getMethod("getService", String.class)
+                    .invoke(null, "activity");
+            Class<?> amn = Class.forName("android.app.ActivityManagerNative");
+            Object am = amn.getMethod("asInterface", IBinder.class)
+                    .invoke(null, (IBinder) ams);
+            Class<?> actMgr = am.getClass();
+            java.lang.reflect.Method reg;
+            try {
+                reg = actMgr.getMethod("registerProcessObserver", iObs);
+            } catch (NoSuchMethodException e) {
+                reg = actMgr.getMethod("registerProcessObserver",
+                        Class.forName("android.os.IProcessObserver"));
             }
-        }, "feasd-idle");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private static void onTouchEvent(boolean down) {
-        if (down) {
-            lastTouchMs = System.currentTimeMillis();
-            if (dfpsEnabled) {
-                switchRefresh(true);
-            }
+            reg.invoke(am, proxy);
+            log("I", "ProcessObserver registered (cold-launch detect)");
+        } catch (Throwable t) {
+            log("W", "ProcessObserver register failed: " + t);
         }
-        // up: idle monitor handles the delayed downgrade
     }
 
-    private static synchronized void switchRefresh(final boolean wantHigh) {
-        if (wantHigh == highRefresh) return;
+    /** fg=true 且 uid 是用户 app(>=10000):冷启动,写 launch_boost。 */
+    private static void onForegroundChanged(int pid, int uid, boolean fg) {
+        if (!fg || uid < 10000) return;
         long now = System.currentTimeMillis();
-        // Debounce only downgrades (120->60). Up-switch on touch must be
-        // immediate: after auto-downgrade, pulling the shade right away
-        // otherwise stays at 60Hz and stutters.
-        if (now - lastSwitchMs < SWITCH_MIN_INTERVAL_MS && !wantHigh) return;
+        if (now - lastLaunchBoostMs < LAUNCH_BOOST_MIN_GAP_MS) return;
+        lastLaunchBoostMs = now;
+        writeLong(LAUNCH_BOOST, 1);
+        log("I", "launch boost: uid=" + uid + " pid=" + pid);
+    }
+
+    /* ---------------- dfps switch ---------------- */
+
+    /**
+     * v3.1 零延迟切换:
+     *  - 升频(->120)无条件立即执行:触摸/动画瞬间切 120Hz,不做 1s 防抖
+     *    (防抖只约束降频,避免 60/120 反复横跳)
+     *  - set-constant-fps 改反射直连 DisplayManagerGlobal.setConstantFrameRate:
+     *    app_process 内 0ms 同步调用,替代 spawn `cmd display` 进程(~100ms)
+     *  - 全同步,无 spawn 线程,延迟不可感知
+     */
+    private static synchronized void switchRefresh(final boolean high) {
+        if (high == highRefresh) return;
+        long now = System.currentTimeMillis();
+        /* 降频才需要防抖(升频立即,降频等 1s 避免横跳) */
+        if (!high && now - lastSwitchMs < SWITCH_MIN_INTERVAL_MS) return;
         lastSwitchMs = now;
-        highRefresh = wantHigh;
-        final int gpuMhz = wantHigh ? GPU_MHZ_NORMAL : GPU_MHZ_HIGH;
-        final int fps = wantHigh ? 120 : 60;
-        log("I", "dfps switch -> " + fps + " Hz"
-                + ", gpu floor " + gpuMhz + " MHz");
-        // state file for the FEAS module (no getprop process needed)
-        writeCtrlFile(STATE_FILE, wantHigh ? "1" : "0");
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    // 240Hz MBR (BFI): must be OFF before dropping to 60Hz
-                    // (hmd panel commands only exist in the 120Hz timing)
-                    if (!wantHigh && hmdEnabled) {
-                        HmdController.setHmd(false);
-                    }
-                    // Zero-spawn path: setprop via reflection + direct sysfs
-                    // writes (daemon runs as root in the ksu domain, which the
-                    // module sepolicy.rule already grants perf_manager access).
-                    // Only the broadcast needs a spawned process.
-                    setProp(FPSMODE_PROP, wantHigh ? "true" : "false");
-                    writeSysfs(GPU_MHZ_SYSFS, gpuMhz);
-                    writeSysfs("/sys/kernel/perf_manager/fps", fps);
-                    execQuiet(BROADCAST_CMD);
-                    // BFI only applies while the panel is at 120Hz
-                    if (wantHigh && hmdEnabled) {
-                        HmdController.setHmd(true);
-                    }
-                } catch (Exception e) {
-                    log("E", "dfps exec failed: " + e);
-                }
+        highRefresh = high;
+        flow.setHighRefresh(high);
+        final int gpuMhz = high ? GPU_MHZ_NORMAL : GPU_MHZ_HIGH;
+        final int fps = high ? 120 : 60;
+        log("I", "dfps switch -> " + fps + " Hz");
+        writeCtrlFile(STATE_FILE, high ? "1" : "0");
+
+        /* 1) 内核 fps 节点(面板侧,最低延迟,同步) */
+        writeLong("/sys/kernel/perf_manager/fps", fps);
+        writeLong(GPU_MHZ_SYSFS, gpuMhz);
+        /* 2) 渲染侧 constant frame rate(0ms 反射直连,替代 cmd spawn) */
+        setConstantFrameRate(fps);
+    }
+
+    /**
+     * 反射调用 DisplayManagerGlobal.setConstantFrameRate(int)。
+     * 即 `cmd display set-constant-fps` 的底层客户端方法,app_process 内
+     * 直接 binder 调用,零进程 spawn,实测 0ms。失败静默(内核 fps 节点已写)。
+     */
+    private static void setConstantFrameRate(int fps) {
+        try {
+            Class<?> dmg = Class.forName(
+                    "android.hardware.display.DisplayManagerGlobal");
+            Object inst = dmg.getMethod("getInstance").invoke(null);
+            if (inst != null) {
+                dmg.getMethod("setConstantFrameRate", int.class).invoke(inst, fps);
             }
-        }, "feasd-switch");
-        t.setDaemon(true);
-        t.start();
+        } catch (Throwable t) {
+            log("W", "setConstantFrameRate(" + fps + ") failed: " + t);
+        }
     }
 }

@@ -1,5 +1,17 @@
-# FEAS sepolicy - sysfs frame reporting
-# Allow platform_app/systemui to read+open+write the perf_manager sysfs node
-allow platform_app sysfs file { read open write getattr }
-allow systemui sysfs file { read open write getattr }
-allow untrusted_app sysfs file { read open getattr }
+allow ksu perf_manager chr_file rw_file_perms
+allow platform_app sysfs file getattr
+allow platform_app sysfs file open
+allow platform_app sysfs file read
+allow platform_app sysfs file write
+allow platform_app sysfs dir search
+allow untrusted_app sysfs file getattr
+allow untrusted_app sysfs file open
+allow untrusted_app sysfs file read
+allow untrusted_app sysfs file write
+allow untrusted_app sysfs dir search
+allow platform_app default_android_service service_manager find
+allow untrusted_app default_android_service service_manager find
+allow system_app default_android_service service_manager find
+allow shell default_android_service service_manager find
+allow kernel vendor_sysfs_kgsl file write
+allow kernel vendor_sysfs_kgsl file open

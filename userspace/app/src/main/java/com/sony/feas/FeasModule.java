@@ -11,40 +11,39 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam;
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam;
 
 /**
- * FEAS 模块入口(libxposed API 102,Vector 框架)。
+ * FEAS 模块入口(libxposed API 102,Vector 框架)。v3.0 Binder 重构。
  *
  * 完整功能:
- *  - hook onVsync 检测帧
- *  - 批量上报帧间隔到内核(sysfs)
+ *  - hook onVsync 检测帧(FrameTimeTracker 统一测量,EMA 自适应 jank)
+ *  - 双通道上报:
+ *      * 内核 sysfs frame(avgNs,驱动 perf_anim_active/CPU 调度,不可移除)
+ *      * Binder REPORT_FRAMES(total, avgNs, jankCount) -> feasd
+ *        (dfps 决策 + jank 升频,jank 不再被批平均抹平)
  *  - 目标帧率:手动优先;自动模式动态跟随实际刷新率
- *    (60Hz → 60, 120Hz → 120,避免调频错乱卡顿)
- *  - 分辨率解锁(system_server + Settings,原 pdx234 合并,见 ResolutionUnlock)
+ *  - 分辨率解锁(system_server + Settings,见 ResolutionUnlock)
  *  - 统计供 UI 显示
  */
 public class FeasModule extends XposedModule {
 
     private static final String TAG = "FEAS";
-    private static final int FRAME_BATCH = 30;
     private static final String FRAME_SYSFS = "/sys/kernel/perf_manager/frame";
     private static final String FRAME_TOTAL_SYSFS = "/sys/kernel/perf_manager/frame_total";
     private static final String FPS_SYSFS = "/sys/kernel/perf_manager/fps";
 
     private static volatile FileOutputStream frameWriter;
     private static volatile boolean writerFailed = false;
-    private static volatile long lastReportedAvg = 0;
 
-    // 轻量帧间隔统计(替代 map,减少每帧分配)
-    private static volatile long lastVsyncNs = 0;
-    private static int batchCount = 0;
-    private static long batchSumNs = 0;
+    /* 统一帧时间测量(Choreographer 线程热路径,见 FrameTimeTracker) */
+    private static volatile FrameTimeTracker tracker;
 
     private static final String PROCESS_SYSTEM_UI = "com.android.systemui";
+    private static final String PROCESS_LAUNCHER = "com.sony.sonyericsson.home";
     private static final String PROCESS_SETTINGS = "com.android.settings";
     private static boolean hooksStarted = false;
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
-        Log.i(TAG, "FEAS 模块已加载, api=" + getApiVersion()
+        Log.i(TAG, "FEAS v3.0 模块已加载, api=" + getApiVersion()
                 + ", process=" + param.getProcessName());
         trace("onModuleLoaded process=" + param.getProcessName()
                 + " isSystemServer=" + param.isSystemServer());
@@ -76,24 +75,9 @@ public class FeasModule extends XposedModule {
     }
 
     /**
-     * 开机恢复用户分辨率(pdx234 机制源码级复刻,不依赖 PersistentDataStore):
-     *
-     * 背景(DMS 源码分析,67.2.A.3.163):
-     *  - PersistentDataStore(display_settings.xml)对内部显示
-     *    (uniqueId="local:131", hasStableUniqueId()==false)不保存用户偏好 →
-     *    configurePreferredDisplayModeLocked 开机读不到 → 无恢复。
-     *  - cmd display set(service.sh,boot 后期)太晚:只写 settings 全局 +
-     *    内存 mUserPreferredMode,display 配置流程早已完成。
-     *  - 正确路径:在 system_server 内早期调用
-     *    DisplayManagerGlobal.setUserPreferredDisplayMode(0, mode) →
-     *    DisplayDevice.setUserPreferredDisplayModeLocked →
-     *    SurfaceFlinger.setBootDisplayMode → bootanimation 即 4K,
-     *    且 device preferred 生效,systemui 以 4K 启动。
-     *
-     * 时机:等待 WMS mSystemBooted=true(与原模块 service.sh 一致)后执行;
-     * 此时 bootanimation 通常仍在播放(索尼开机动画较长),systemui 尚未
-     * 完成初始化,切换发生在显示栈早期,安全(实验证明风险窗口是
-     * systemui 初始化中段,而非 boot 早期)。
+     * 开机恢复用户分辨率(pdx234 机制源码级复刻,不依赖 PersistentDataStore)。
+     * 时机:等待 sys.boot_completed 后执行(bootanimation 期间,显示栈早期)。
+     * v3.0:轮询收紧为 60×500ms(30s 上限),恢复更早完成,避免无谓等待。
      */
     private void scheduleBootResolutionRestore() {
         Thread t = new Thread(new Runnable() {
@@ -101,24 +85,20 @@ public class FeasModule extends XposedModule {
             public void run() {
                 try {
                     trace("bootrest thread start");
-                    // Wait for boot_completed via SystemProperties reflection
-                    // (spawning dumpsys from system_server is blocked, which made
-                    // the mSystemBooted wait loop time out for 100s).
                     boolean booted = false;
                     Class<?> sp = Class.forName("android.os.SystemProperties");
-                    for (int i = 0; i < 180; i++) {
+                    for (int i = 0; i < 60; i++) {
                         try {
                             String v = (String) sp.getMethod("get", String.class)
                                     .invoke(null, "sys.boot_completed");
                             if ("1".equals(v)) { booted = true; break; }
                         } catch (Throwable ignored) {
                         }
-                        Thread.sleep(1000);
+                        Thread.sleep(500);
                     }
                     trace("bootrest boot_completed=" + booted);
                     if (!booted) return;
 
-                    // Read user preference (SettingsProvider is ready)
                     Object app = Class.forName("android.app.ActivityThread")
                             .getMethod("currentApplication").invoke(null);
                     if (app == null) return;
@@ -140,18 +120,10 @@ public class FeasModule extends XposedModule {
                             "android.hardware.display.DisplayManagerGlobal");
                     Object inst = dmg.getMethod("getInstance").invoke(null);
 
-                    // 1) Force the mode now, exactly like the Settings page does
-                    //    (DisplayManager.requestDisplayModes is a public API and
-                    //     the in-system_server DisplayManagerGlobal token is valid).
                     Object info = dmg.getMethod("getDisplayInfo", int.class)
                             .invoke(inst, 0);
                     java.lang.reflect.Field sf = info.getClass().getField("supportedModes");
                     Object[] modes = (Object[]) sf.get(info);
-                    // CRITICAL: use the REAL Display.Mode object from the display
-                    // (exact refreshRate like 120.00001f). Constructing a new
-                    // Display.Mode(1644,3840,120f) fails Display.Mode.matches()
-                    // (exact == comparison) inside findUserPreferredModeIdLocked
-                    // and setUserPreferredDisplayMode is silently dropped.
                     Object targetMode = null;
                     int modeId = -1;
                     for (Object m : modes) {
@@ -172,8 +144,6 @@ public class FeasModule extends XposedModule {
                         return;
                     }
                     trace("bootrest target modeId=" + modeId);
-                    // Settings page (ScreenResolutionFragment.setDisplayMode) writes
-                    // Settings.System.user_selected_resolution - replicate it.
                     android.provider.Settings.System.putString(cr,
                             "user_selected_resolution", wantW + "x" + wantH);
                     trace("bootrest user_selected_resolution=" + wantW + "x" + wantH);
@@ -185,8 +155,6 @@ public class FeasModule extends XposedModule {
                         trace("bootrest requestDisplayModes modeId=" + modeId);
                     }
 
-                    // Store the preference with the REAL mode object (sets
-                    // device preferred + SF boot mode; exact refreshRate matches).
                     java.lang.reflect.Method set = dmg.getMethod(
                             "setUserPreferredDisplayMode", int.class,
                             targetMode.getClass());
@@ -217,16 +185,19 @@ public class FeasModule extends XposedModule {
             return;
         }
 
-        // 帧上报:只在 systemui 进程挂钩(参照 cirno 的 onPackageReady 模式)
-        if (!PROCESS_SYSTEM_UI.equals(packageName) || hooksStarted) {
+        // 帧上报:挂钩所有 UI 进程(scope.list 限定注入范围,Settings 与
+        // system_server 已在上方 return)。每个进程注入独立的静态状态,
+        // 任一进程渲染都持续上报 -> feasd 跨进程保持 120Hz。
+        if (hooksStarted) {
             return;
         }
         hooksStarted = true;
 
-        Log.i(TAG, "SystemUI ready, hooking onVsync");
+        Log.i(TAG, packageName + " ready, hooking onVsync");
         try {
             hookVsync(param.getClassLoader());
-            Log.i(TAG, "Vsync 挂钩已安装");
+            Log.i(TAG, "Vsync 挂钩已安装 (" + packageName + ")");
+            tracker = new FrameTimeTracker();
             openFrameWriter();
             initTargetFps();
         } catch (Throwable t) {
@@ -235,8 +206,6 @@ public class FeasModule extends XposedModule {
     }
 
     private void hookVsync(ClassLoader hostLoader) {
-        // 精确锁定 Choreographer.FrameDisplayEventReceiver.onVsync(long,long,int),
-        // 不遍历所有内部类找第一个 onVsync(可能命中错误方法)。
         Class<?> choreographer;
         try {
             choreographer = Class.forName("android.view.Choreographer",
@@ -269,14 +238,11 @@ public class FeasModule extends XposedModule {
 
         // NOTE: 不做 deoptimize。deopt 热路径方法会强制 ART 去内联,在开机
         // 高峰期间拖慢 systemui 主线程(曾导致 systemui 静默被杀)。
-        // libxposed 官方语义:deoptimize 仅在"钩子因内联不生效"时作为补救。
         hook(onVsync).intercept(new FrameHooker());
         Log.i(TAG, "已挂钩 FrameDisplayEventReceiver.onVsync");
     }
 
-    /** 初始化目标帧率:手动优先;自动模式写默认 120(feasd 切换时直写内核)。
-     * 模块不做任何轮询/进程 spawn(极限省电)。
-     */
+    /** 初始化目标帧率:手动优先;自动模式写默认 120(feasd 切换时直写内核)。 */
     private static void initTargetFps() {
         try {
             int manual = PerfMgrSysfs.getManualFps();
@@ -313,22 +279,6 @@ public class FeasModule extends XposedModule {
         }
     }
 
-    /** 写真实累计帧数到内核(死区跳过上报时也能反映真实渲染量) */
-    private static volatile java.io.FileOutputStream frameTotalWriter;
-
-    private static synchronized void writeFrameTotal() {
-        try {
-            java.io.FileOutputStream fos = frameTotalWriter;
-            if (fos == null) {
-                fos = new java.io.FileOutputStream(FRAME_TOTAL_SYSFS);
-                frameTotalWriter = fos;
-            }
-            fos.write((FeasStats.getFrameCount() + "\n").getBytes("US-ASCII"));
-            fos.flush();
-        } catch (Throwable ignored) {
-        }
-    }
-
     private static synchronized boolean writeFrame(long durationNs) {
         if (frameWriter == null) {
             openFrameWriter();
@@ -348,53 +298,30 @@ public class FeasModule extends XposedModule {
 
         @Override
         public Object intercept(Chain chain) throws Throwable {
-            FeasStats.incFrame();
-            long n = FeasStats.getFrameCount();
-            if (n % 600 == 0) {
-                Log.i(TAG, "vsync 调用计数: " + n);
+            FrameTimeTracker tr = tracker;
+            if (tr == null) {
+                return chain.proceed();
             }
             try {
-                // 用轻量字段替代 map:onVsync 在 Choreographer 线程串行调用
-                long now = System.nanoTime();
-                long last = lastVsyncNs;
-                lastVsyncNs = now;
-                if (last != 0) {
-                    long durationNs = now - last;
-                    if (durationNs > 0 && durationNs < 5_000_000_000L) {
-                        batchCount++;
-                        batchSumNs += durationNs;
-                        if (batchCount >= FRAME_BATCH) {
-                            long avgNs = batchSumNs / batchCount;
-                            batchCount = 0;
-                            batchSumNs = 0;
+                // 统一测量点:FrameTimeTracker 在 Choreographer 线程串行调用
+                tr.record(System.nanoTime());
+                if (tr.isBatchFull()) {
+                    long avgNs = tr.flush();
+                    int jankCount = tr.getLastJankCount();
 
-                            // 死区:帧间隔变化 < 10% 不上报内核
-                            // 但统计记为成功(模块在正常工作,只是帧稳定无需上报)
-                            if (lastReportedAvg != 0) {
-                                long diff = Math.abs(avgNs - lastReportedAvg);
-                                if (diff * 10 < lastReportedAvg) {
-                                    FeasStats.incOk();
-                                    writeFrameTotal();
-                                    return chain.proceed();
-                                }
-                            }
-                            lastReportedAvg = avgNs;
-
-                            boolean ok = writeFrame(avgNs);
-                            writeFrameTotal();
-                            if (ok) {
-                                FeasStats.incOk();
-                                long rn = FeasStats.getReportOk();
-                                if (rn % 60 == 0) {
-                                    Log.i(TAG, "帧上报累计: " + rn + " 成功, "
-                                            + FeasStats.getReportFail() + " 失败");
-                                }
-                            } else {
-                                FeasStats.incFail();
-                            }
-                        }
+                    // 双通道上报:
+                    // 1) 内核 sysfs(avgNs) -> perf_anim_active/CPU 调度
+                    // 2) Binder oneway(total, avgNs, jankCount) -> feasd dfps/jank
+                    boolean ok = writeFrame(avgNs);
+                    FeasBinderClient.reportFrames(
+                            tr.getFrameTotal(), (int) avgNs, jankCount);
+                    if (ok) {
+                        FeasStats.incOk();
+                    } else {
+                        FeasStats.incFail();
                     }
                 }
+                FeasStats.incFrame();
             } catch (Throwable ignored) {
             }
             return chain.proceed();
