@@ -14,28 +14,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain (clang-14 + lld + dtc)
+      - name: Install build deps (host tools)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            clang-14 lld-14 llvm-14 binutils build-essential \
-            flex bison libssl-dev libelf-dev bc python3 lz4 xz-utils \
-            device-tree-compiler
-          # unversioned llvm tool symlinks (LLVM=1 build needs plain names)
-          for t in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump \
-                   llvm-readelf llvm-size llvm-strip llvm-as llvm-ranlib llvm-strings; do
-            sudo ln -sf /usr/bin/$t-14 /usr/local/bin/$t
-          done
-          clang --version | head -1
-          ld.lld --version | head -1
+            binutils build-essential flex bison libssl-dev libelf-dev \
+            bc python3 lz4 xz-utils device-tree-compiler
+
+      - name: Fetch Google clang-r450784e (exact GKI 5.15 toolchain)
+        run: |
+          mkdir -p $HOME/clang
+          curl -L --fail -o /tmp/clang.tar.gz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-5.15/clang-r450784e.tar.gz"
+          tar -xzf /tmp/clang.tar.gz -C $HOME/clang
+          ls -la $HOME/clang/bin/clang
+          $HOME/clang/bin/clang --version | head -2
 
       - name: Prepare out tree with saved config
         working-directory: kernel_platform
         run: |
           mkdir -p out/gki_kernel/common
-          # config_launchboost_550_base.config == config extracted from the
-          # verified-on-device kernel (launchboost #5, IKCONFIG). Preserved
-          # exactly so CI rebuilds the same kernel.
+          # config extracted from the verified-on-device kernel (IKCONFIG).
+          # CI rebuilds exactly this kernel: GPU 550M cap, 680M only on jank.
           cp config_launchboost_550_base.config out/gki_kernel/common/.config
           make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
             olddefconfig 2>&1 | tail -5
@@ -45,13 +45,17 @@ jobs:
       - name: Build kernel Image
         working-directory: kernel_platform
         run: |
+          export PATH=$HOME/clang/bin:$PATH
           make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
-            -j$(nproc) Image 2>&1 | tail -30
-          ls -la out/gki_kernel/common/arch/arm64/boot/Image
+            -j$(nproc) Image > kbuild.log 2>&1
+          rc=$?
+          tail -40 kbuild.log
+          exit $rc
 
-      - name: Build Image.lz4 (bootloader-preferred compression)
+      - name: Build Image.lz4
         working-directory: kernel_platform
         run: |
+          export PATH=$HOME/clang/bin:$PATH
           make -C common O=$PWD/out/gki_kernel/common ARCH=arm64 LLVM=1 \
             Image.lz4 2>&1 | tail -5 || true
           ls -la out/gki_kernel/common/arch/arm64/boot/Image.lz4 2>/dev/null || true
@@ -60,7 +64,7 @@ jobs:
         run: |
           python3 - <<'EOF'
           import struct
-          src = 'kernel_platform/boot_base.img'      # verified-flashable template
+          src = 'kernel_platform/boot_base.img'
           newk = 'kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image'
           out = 'boot_launchboost_550.img'
           old = open(src, 'rb').read()
@@ -68,7 +72,7 @@ jobs:
           assert header[:8] == b'ANDROID!', 'bad boot template'
           k = open(newk, 'rb').read()
           h = bytearray(header)
-          struct.pack_into('<I', h, 8, len(k))       # update kernel_size
+          struct.pack_into('<I', h, 8, len(k))
           img = bytes(h) + k
           open(out, 'wb').write(img)
           print('boot img bytes:', len(img))
@@ -85,6 +89,7 @@ jobs:
             kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image
             kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image.lz4
             kernel_platform/out/gki_kernel/common/.config
+            kernel_platform/kbuild.log
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
