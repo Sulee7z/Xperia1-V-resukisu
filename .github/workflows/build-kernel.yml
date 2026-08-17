@@ -104,9 +104,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: boot_launchboost_550
+          name: boot_launchboost_550.img
+          path: boot_launchboost_550.img
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-intermediate
           path: |
-            boot_launchboost_550.img
             kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image
             kernel_platform/out/gki_kernel/common/arch/arm64/boot/Image.lz4
             kernel_platform/out/gki_kernel/common/.config
