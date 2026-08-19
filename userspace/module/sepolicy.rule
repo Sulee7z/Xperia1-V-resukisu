@@ -9,9 +9,12 @@ allow untrusted_app sysfs file open
 allow untrusted_app sysfs file read
 allow untrusted_app sysfs file write
 allow untrusted_app sysfs dir search
-# Binder service "feas" (feasd daemon) lookup - WITHOUT these the module apps
-# cannot find the daemon's service (avc denied find -> frame reporting all 0)
 allow platform_app default_android_service service_manager find
 allow untrusted_app default_android_service service_manager find
 allow system_app default_android_service service_manager find
-allow system_server default_android_service service_manager find
+allow shell default_android_service service_manager find
+allow kernel vendor_sysfs_kgsl file write
+allow kernel vendor_sysfs_kgsl file open
+allow su system_server binder call;
+allow system_server su binder transfer;
+allow su system_server binder transfer;
