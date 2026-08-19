@@ -72,10 +72,38 @@ static int perfmgr_qos_count;
 static unsigned long little_freq_cap = 1228800;  /* A510 eff max */
 static unsigned long mid_freq_cap = 1536000;    /* A715/A720 eff max */
 static unsigned long big_freq_cap = 1708800;    /* X3 eff max */
-static unsigned long gpu_freq_cap = 550000000;  /* GPU max when idle/anim */
 static unsigned long gpu_touch_cap = 680000000;  /* GPU max while touching (jank escape) */
 static unsigned long gpu_idle_cap = 124800000;  /* GPU max when fully idle / screen off (lowest) */
 static unsigned long gpu_boost_min = 401000000; /* GPU touch boost floor 401MHz (220/401/475/550) */
+
+/* Adreno 740 (kalama) native GPU levels, ascending. The GPU cap is allowed
+ * to float across these by frame load (fps_floor_util, fed by FEAS frame
+ * reporting) instead of being hard-locked to a single bin - so the GPU
+ * dynamically scales instead of sitting on 550/680 only. */
+static const unsigned long gpu_levels[] = {
+	124800000UL, 220000000UL, 295000000UL, 348000000UL, 401000000UL,
+	475000000UL, 550000000UL, 615000000UL, 680000000UL,
+};
+#define GPU_LEVELS_N ARRAY_SIZE(gpu_levels)
+
+/* Frame load (fps_floor_util 0-1024) -> GPU max cap, snapped to the nearest
+ * native level <= want.  util=0 -> 401M (frames flowing, light); heavy frame
+ * load -> up to 680M.  Fully-idle is handled separately (gpu_idle_cap). */
+static unsigned long perf_gpu_cap_for_util(unsigned long util)
+{
+	unsigned long want;
+	int i;
+
+	if (util > 1024)
+		util = 1024;
+	want = gpu_boost_min +
+	       (gpu_touch_cap - gpu_boost_min) * util / 1024;
+	for (i = GPU_LEVELS_N - 1; i >= 0; i--) {
+		if (gpu_levels[i] <= want)
+			return gpu_levels[i];
+	}
+	return gpu_levels[0];
+}
 /* Touch boost targets per cluster (energy-friendly, not max):
  * [0]=A510 little, [1]=A715/A720 mid, [2]=X3 big */
 static struct notifier_block perf_pm_nb;
@@ -469,7 +497,10 @@ static void perf_idle_work(struct work_struct *work)
 		 !READ_ONCE(perf_anim_active))
 		perf_gpu_set_max(gpu_idle_cap);    /* screen off / fully idle: 124.8M */
 	else
-		perf_gpu_set_max(gpu_freq_cap);    /* anim/touch/launch: hard 550M */
+		/* frames flowing (anim/touch/launch): GPU cap floats across
+		 * the native levels by frame load - not a hard 550M bin */
+		perf_gpu_set_max(perf_gpu_cap_for_util(
+					READ_ONCE(fps_floor_util)));
 	if (!READ_ONCE(perf_touch_boosted) && !READ_ONCE(perf_launch_boosted) &&
 	    !READ_ONCE(perf_anim_active))
 		perf_apply_cluster(CLUSTER_IDLE);
@@ -886,7 +917,8 @@ static ssize_t frame_store(struct kobject *kobj, struct kobj_attribute *attr,
 			 * Touching -> ANIM (touch non-jank state); otherwise
 			 * frame_apply_max() picks ANIM (frames flowing, no
 			 * jank) or IDLE (no frames). */
-			perf_gpu_set_max(gpu_freq_cap);
+			perf_gpu_set_max(perf_gpu_cap_for_util(
+						READ_ONCE(fps_floor_util)));
 			if (READ_ONCE(perf_touch_util) > 0)
 				perf_apply_cluster(CLUSTER_ANIM);
 			else
@@ -1040,7 +1072,8 @@ static int perf_pm_notifier(struct notifier_block *nb,
 		perf_gpu_set_min(gpu_boost_min);
 		perf_apply_cluster(CLUSTER_ANIM);   /* screen-on animation */
 		perf_cpuset_set("3-6");
-		perf_gpu_set_max(550000000UL);
+		perf_gpu_set_max(perf_gpu_cap_for_util(
+					READ_ONCE(fps_floor_util)));
 		/* auto-release after hold: back to caps */
 		schedule_delayed_work(&perf_touch_work,
 				      msecs_to_jiffies(touch_hold_ms));
@@ -1069,10 +1102,10 @@ static void perf_gpu_lazy_find(void)
 	if (perf_gpu_devfreq) {
 		perf_gpu_found = 1;
 		/* kgsl loads AFTER this built-in driver: enforce the cap now */
-		perf_gpu_set_max(gpu_freq_cap);
-		pr_info(PFX "GPU devfreq located (lazy): %s (cap=%luHz)\n",
-			dev_name(&perf_gpu_devfreq->dev),
-			gpu_freq_cap);
+		perf_gpu_set_max(perf_gpu_cap_for_util(
+					READ_ONCE(fps_floor_util)));
+		pr_info(PFX "GPU devfreq located (lazy): %s (cap floats)\n",
+			dev_name(&perf_gpu_devfreq->dev));
 	}
 }
 
@@ -1085,8 +1118,11 @@ static void perf_gpu_set_min(unsigned long min_hz)
 		return;
 
 	mutex_lock(&perf_gpu_devfreq->lock);
-	if (perf_gpu_devfreq->scaling_max_freq != gpu_freq_cap) {
-		perf_gpu_devfreq->scaling_max_freq = gpu_freq_cap;
+	/* devfreq internal max: allow up to gpu_touch_cap; the actual
+	 * floating cap is enforced by perf_gpu_set_max (kgsl max_gpuclk +
+	 * PM QoS), so this must never lock the GPU to a lower bin. */
+	if (perf_gpu_devfreq->scaling_max_freq != gpu_touch_cap) {
+		perf_gpu_devfreq->scaling_max_freq = gpu_touch_cap;
 	}
 	if (perf_gpu_devfreq->scaling_min_freq != min_hz) {
 		perf_gpu_devfreq->scaling_min_freq = min_hz;
@@ -1157,7 +1193,8 @@ static void perf_touch_mid(struct work_struct *work)
 	WRITE_ONCE(perf_touch_in_mid, true);
 	WRITE_ONCE(perf_touch_util, 600);  /* mid floor */
 	perf_touch_apply_boost(perf_allow_overlimit() ? 1 : 0);
-	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap : gpu_freq_cap);
+	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap :
+			 perf_gpu_cap_for_util(READ_ONCE(fps_floor_util)));
 	pr_debug(PFX "touch state (overlimit=%d)\n",
 		 perf_allow_overlimit() ? 1 : 0);
 }
@@ -1177,13 +1214,15 @@ static void perf_touch_release(struct work_struct *work)
 		 * straight to IDLE and stuttering the anim tail. */
 		perf_frame_apply_max();
 		perf_cpuset_set("3-6");
-		perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap
-							: gpu_freq_cap);
+		perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap :
+				 perf_gpu_cap_for_util(
+					READ_ONCE(fps_floor_util)));
 	} else {
 		perf_apply_cluster(CLUSTER_IDLE); /* idle caps */
 		perf_cpuset_set("0-7");          /* full cpuset */
 		perf_gpu_set_min(0);             /* GPU idle */
-		perf_gpu_set_max(gpu_freq_cap);  /* re-apply kgsl cap */
+		perf_gpu_set_max(perf_gpu_cap_for_util(
+					READ_ONCE(fps_floor_util)));
 	}
 	pr_info(PFX "touch released: anim=%d\n", READ_ONCE(perf_anim_active));
 }
@@ -1196,9 +1235,10 @@ static void perf_launch_boost_apply(void)
 {
 	WRITE_ONCE(perf_launch_boosted, true);
 	perf_apply_cluster(CLUSTER_TOUCH);
-	/* 550M hard cap normally; 680M only on confirmed jank */
+	/* GPU cap floats with frame load; 680M only on confirmed jank */
 	perf_gpu_set_max(perf_allow_overlimit() ?
-			 gpu_touch_cap : gpu_freq_cap);
+			 gpu_touch_cap :
+			 perf_gpu_cap_for_util(READ_ONCE(fps_floor_util)));
 	perf_gpu_set_min(gpu_boost_min);
 	schedule_delayed_work(&perf_launch_work,
 			      msecs_to_jiffies(LAUNCH_BOOST_MS));
@@ -1216,8 +1256,8 @@ static void perf_launch_release(struct work_struct *work)
 		perf_frame_apply_max();
 	else
 		perf_apply_cluster(CLUSTER_IDLE);
-	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap
-						: gpu_freq_cap);
+	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap :
+			 perf_gpu_cap_for_util(READ_ONCE(fps_floor_util)));
 	perf_fps_gpu_floor(READ_ONCE(fps_floor_util));
 	pr_info(PFX "launch boost released\n");
 }
@@ -1229,11 +1269,13 @@ static void perf_touch_do_boost(struct work_struct *work)
 	perf_apply_cluster(CLUSTER_ANIM); /* anim peak caps */
 	perf_cpuset_set("3-6");          /* render on mid cores only */
 	perf_gpu_set_min(gpu_boost_min); /* GPU 401M floor */
-	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap : gpu_freq_cap);
+	perf_gpu_set_max(perf_allow_overlimit() ? gpu_touch_cap :
+			 perf_gpu_cap_for_util(READ_ONCE(fps_floor_util)));
 	if (perf_allow_overlimit())
 		pr_info(PFX "anim boost + jank: gpu cap 680M\n");
 	else
-		pr_info(PFX "anim boost: gpu cap 550M\n");
+		pr_info(PFX "anim boost: gpu cap floats (%luHz)\n",
+			perf_gpu_cap_for_util(READ_ONCE(fps_floor_util)));
 }
 
 /* Input event (ATOMIC context: input core holds spinlock here!
@@ -1507,7 +1549,9 @@ static ssize_t launch_boost_store(struct kobject *kobj,
 			WRITE_ONCE(perf_launch_boosted, false);
 			perf_frame_apply_max();
 			perf_gpu_set_max(perf_allow_overlimit() ?
-					 gpu_touch_cap : gpu_freq_cap);
+					 gpu_touch_cap :
+					 perf_gpu_cap_for_util(
+						READ_ONCE(fps_floor_util)));
 			perf_fps_gpu_floor(READ_ONCE(fps_floor_util));
 		}
 	}
@@ -1617,10 +1661,10 @@ static int __init perf_mgr_init(void)
 		}
 		if (perf_gpu_devfreq) {
 			perf_gpu_found = 1;
-			perf_gpu_set_max(gpu_freq_cap);
-			pr_info(PFX "GPU devfreq: %s (cap=%luHz)\n",
-				dev_name(&perf_gpu_devfreq->dev),
-				gpu_freq_cap);
+			perf_gpu_set_max(perf_gpu_cap_for_util(
+						READ_ONCE(fps_floor_util)));
+			pr_info(PFX "GPU devfreq: %s (cap floats)\n",
+				dev_name(&perf_gpu_devfreq->dev));
 		} else {
 			perf_gpu_found = 0;
 			pr_info(PFX "GPU devfreq NOT found (touch boost GPU off)\n");
