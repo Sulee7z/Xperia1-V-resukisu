@@ -33,7 +33,8 @@ import android.os.Parcel;
  */
 public class Main {
     private static final String TAG = "FEASD";
-    private static final String[] INPUT_DEVICES = {"/dev/input/event4"};
+    /* 触摸设备不硬编码 event4:驱动重枚举后节点可能变化,硬编码会漏掉触摸。
+     * 通过 /proc/bus/input/devices 动态发现含 ABS_MT_POSITION_X 的 event 节点。 */
     private static final long SWITCH_MIN_INTERVAL_MS = 1000; /* 降频防抖:避免 60/120 横跳;升频不限制 */
     private static final String GPU_MHZ_SYSFS = "/sys/kernel/perf_manager/touch_gpu_mhz";
     /* touch_gpu_mhz = 触摸时 GPU 最低频率(内核默认 550),松手自动释放(省电)
@@ -231,33 +232,21 @@ private static String readFile(String path) {
             public void run() {
                 byte[] buf = new byte[24];
                 while (true) {
-                    for (String path : INPUT_DEVICES) {
+                    String path = findTouchDevice();
+                    if (path != null) {
                         File f = new File(path);
-                        if (!f.exists()) continue;
-                        try {
-                            DataInputStream dis = new DataInputStream(
-                                    new FileInputStream(f));
-                            log("I", "listening " + path);
-                            while (true) {
-                                dis.readFully(buf);
-                                int type = (buf[16] & 255) | ((buf[17] & 255) << 8);
-                                int code = (buf[18] & 255) | ((buf[19] & 255) << 8);
-                                int value = (buf[20] & 255) | ((buf[21] & 255) << 8)
-                                        | ((buf[22] & 255) << 16) | ((buf[23] & 255) << 24);
-                                if (type == EV_ABS) {
-                                    if (code == ABS_MT_TRACKING_ID) {
-                                        flow.onTouch(value >= 0);
-                                    } else if (code == ABS_MT_TOUCH_MAJOR && value > 0) {
-                                        flow.onTouch(true);
-                                    } else if (code == ABS_MT_POSITION_X ||
-                                               code == ABS_MT_POSITION_Y) {
-                                        /* slide: 立即 120Hz */
-                                        flow.onTouch(true);
-                                    }
+                        if (f.exists()) {
+                            try {
+                                DataInputStream dis = new DataInputStream(
+                                        new FileInputStream(f));
+                                log("I", "listening " + path);
+                                while (true) {
+                                    dis.readFully(buf);
+                                    handleInputEvent(buf);
                                 }
+                            } catch (Exception e) {
+                                log("W", "input " + path + " error: " + e.getMessage());
                             }
-                        } catch (Exception e) {
-                            log("W", "input " + path + " error: " + e.getMessage());
                         }
                     }
                     try { Thread.sleep(3000); } catch (InterruptedException ie) { break; }
@@ -266,6 +255,63 @@ private static String readFile(String path) {
         }, "feasd-input");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** 动态发现触摸屏事件节点:解析 /proc/bus/input/devices,
+     *  找含 ABS_MT_POSITION_X(0x35) 或 ABS_MT_TRACKING_ID(0x39) 的设备。 */
+    private static String findTouchDevice() {
+        try {
+            String content = readFile("/proc/bus/input/devices");
+            String handlers = null;
+            for (String line : content.split("\n")) {
+                line = line.trim();
+                if (line.startsWith("H: Handlers=")) {
+                    handlers = line.substring("H: Handlers=".length());
+                } else if (line.startsWith("B: ABS=") && handlers != null) {
+                    if (absHasMtBit(line, 0x35) || absHasMtBit(line, 0x39)) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern
+                                .compile("event(\\d+)").matcher(handlers);
+                        if (m.find()) {
+                            return "/dev/input/event" + m.group(1);
+                        }
+                    }
+                    handlers = null;
+                }
+            }
+        } catch (Throwable t) {
+            log("W", "findTouchDevice error: " + t.getMessage());
+        }
+        return null;
+    }
+
+    /** "B: ABS=xxxx" 行第一个 16 进制 u64 位图,检查 bit 是否置位。 */
+    private static boolean absHasMtBit(String absLine, int bit) {
+        try {
+            String hex = absLine.substring(absLine.indexOf('=') + 1)
+                    .trim().split("\\s+")[0];
+            long v = Long.parseLong(hex, 16);
+            return (v & (1L << bit)) != 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 单条 input 事件(24B struct input_event)解析 + 触摸状态投递。 */
+    private static void handleInputEvent(byte[] buf) {
+        int type = (buf[16] & 255) | ((buf[17] & 255) << 8);
+        int code = (buf[18] & 255) | ((buf[19] & 255) << 8);
+        int value = (buf[20] & 255) | ((buf[21] & 255) << 8)
+                | ((buf[22] & 255) << 16) | ((buf[23] & 255) << 24);
+        if (type == EV_ABS) {
+            if (code == ABS_MT_TRACKING_ID) {
+                flow.onTouch(value >= 0);
+            } else if (code == ABS_MT_TOUCH_MAJOR && value > 0) {
+                flow.onTouch(true);
+            } else if (code == ABS_MT_POSITION_X || code == ABS_MT_POSITION_Y) {
+                /* slide: 立即 120Hz */
+                flow.onTouch(true);
+            }
+        }
     }
 
     /* ---------------- process observer (cold-launch detect) ---------------- */

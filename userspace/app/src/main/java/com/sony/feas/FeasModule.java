@@ -294,6 +294,49 @@ public class FeasModule extends XposedModule {
         }
     }
 
+    /* ---------- 异步帧写:onVsync 只入队,后台线程做 sysfs 写 ---------- */
+
+    /* 有界队列:满则丢(后台会排空,丢旧值无害,avgNs 只要反映最近帧况) */
+    private static final java.util.concurrent.ArrayBlockingQueue<Long> FRAME_Q =
+            new java.util.concurrent.ArrayBlockingQueue<Long>(32);
+    private static volatile boolean writerStarted = false;
+
+    private static void enqueueFrame(long avgNs) {
+        try {
+            FRAME_Q.offer(avgNs);
+        } catch (Throwable ignored) {
+        }
+        ensureWriterThread();
+    }
+
+    private static synchronized void ensureWriterThread() {
+        if (writerStarted) {
+            return;
+        }
+        writerStarted = true;
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        Long last = FRAME_Q.take();
+                        Long cur;
+                        // 排空积压,只写最新(防止队列堆积导致延迟越来越大)
+                        while ((cur = FRAME_Q.poll()) != null) {
+                            last = cur;
+                        }
+                        writeFrame(last);
+                    } catch (InterruptedException e) {
+                        return;
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        }, "feas-frame-writer");
+        t.setDaemon(true);
+        t.start();
+    }
+
     public static final class FrameHooker implements XposedInterface.Hooker {
 
         @Override
@@ -310,16 +353,14 @@ public class FeasModule extends XposedModule {
                     int jankCount = tr.getLastJankCount();
 
                     // 双通道上报:
-                    // 1) 内核 sysfs(avgNs) -> perf_anim_active/CPU 调度
-                    // 2) Binder oneway(total, avgNs, jankCount) -> feasd dfps/jank
-                    boolean ok = writeFrame(avgNs);
+                    // 1) Binder oneway(total, avgNs, jankCount) -> feasd dfps/jank
+                    //    (oneway 不阻塞,直接发)
+                    // 2) 内核 sysfs frame(avgNs) -> perf_anim_active/CPU 调度
+                    //    入队移交后台线程写,onVsync 渲染关键路径零阻塞 I/O
                     FeasBinderClient.reportFrames(
                             tr.getFrameTotal(), (int) avgNs, jankCount);
-                    if (ok) {
-                        FeasStats.incOk();
-                    } else {
-                        FeasStats.incFail();
-                    }
+                    enqueueFrame(avgNs);
+                    FeasStats.incOk();
                 }
                 FeasStats.incFrame();
             } catch (Throwable ignored) {

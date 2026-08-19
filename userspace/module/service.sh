@@ -15,30 +15,16 @@ mkdir -p "$STATE"
 LOG="$STATE/feasd.log"
 APK_HASH_FILE="$STATE/.apk_installed.hash"
 SCOPE_MARK="$STATE/.scope_applied"
-RES_LOG="$STATE/res_restore.log"
 
-# ---- Resolution restore (pdx234-resolution-unlock verbatim, with log) ----
-{
-    echo "[$(date)] resolution restore start"
-    if [ "$(getprop ro.build.version.sdk)" = 33 ]; then
-        echo "[$(date)] sdk 33, exit"
-        exit 0
-    fi
-
-    count=0
-    while let "count++ < 100"; do
-        dumpsys window | grep -q mSystemBooted=true && break
-        sleep 1
-    done
-
-    rate="$(settings get global user_preferred_refresh_rate)"
-    height="$(settings get global user_preferred_resolution_height)"
-    width="$(settings get global user_preferred_resolution_width)"
-    echo "[$(date)] got width=$width height=$height rate=$rate"
-
-    cmd display set-user-preferred-display-mode "$width" "$height" "$rate"
-    echo "[$(date)] cmd display rc=$?"
-} >> "$RES_LOG" 2>&1
+# ---- NOTE: Resolution restore removed ----
+# 旧的 pdx234-resolution-unlock verbatim 段(shell 里 dumpsys/settings/cmd display)
+# 在 KernelSU su 域下对 system_server 做 binder_call 被 SELinux 拦截,
+# 一直报 "Failed transaction (2147483646)",从未生效过。
+# 相同功能已由 FEAS 模块的 FeasModule.scheduleBootResolutionRestore 在
+# system_server 进程内以反射方式实现(verified: 4K persists across reboots),
+# 不走 su shell,无 SELinux 限制。删除本段:消除报错 + 减少开机轮询延迟。
+# (原段内 sdk 33 分支的 `exit 0` 还会在 sdk 33 设备上跳过后续 daemon 启动,
+#  一并移除。)
 
 # Wait for boot
 until [ "$(getprop sys.boot_completed)" = "1" ]; do

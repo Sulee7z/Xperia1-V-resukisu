@@ -44,6 +44,12 @@ final class ResolutionUnlock {
 
     private static final String TAG = "FEAS-Res";
 
+    /* getDisplayInfo 排序结果缓存:同一显示配置(active mode + supported 数量)
+     * 下复用已排序数组,避免高频 IPC 里每次 copyOf+sort+匿名类分配。
+     * volatile:system_server 多线程调用,重复构建无害(数组引用原子发布)。 */
+    private static volatile int sSortedKey = -1;
+    private static volatile Display.Mode[] sSortedModes;
+
     private ResolutionUnlock() {
     }
 
@@ -56,7 +62,9 @@ final class ResolutionUnlock {
         if (getDisplayInfo == null) {
             throw new NoSuchMethodException("DisplayManagerService$BinderService.getDisplayInfo(int)");
         }
-        api.deoptimize(getDisplayInfo);
+        // NOTE: 不做 deoptimize —— getDisplayInfo 是全系统高频 Binder IPC 端点
+        // (所有进程查屏幕信息、刷新率协商都走它)。deopt 会强制原方法体永远走
+        // 解释器,拖慢 system_server(GC/响应延迟),表现为与 GPU 无关的全局卡顿。
         api.hook(getDisplayInfo).setExceptionMode(ExceptionMode.PROTECTIVE)
                 .intercept(new Hooker() {
                     @Override
@@ -68,26 +76,24 @@ final class ResolutionUnlock {
                         }
                         DisplayInfo info = (DisplayInfo) result;
                         Display.Mode[] supported = info.supportedModes;
-                        if (supported == null || supported.length == 0) {
+                        if (supported == null || supported.length < 2) {
                             return result;
                         }
-                        final Display.Mode active = info.getMode();
-                        Display.Mode[] sorted = Arrays.copyOf(supported, supported.length);
-                        Arrays.sort(sorted, new Comparator<Display.Mode>() {
-                            @Override
-                            public int compare(Display.Mode o1, Display.Mode o2) {
-                                return Integer.compare(rank(o1), rank(o2));
-                            }
-
-                            private int rank(Display.Mode m) {
-                                if (m.getModeId() == active.getModeId()) return 0;
-                                if (m.getPhysicalWidth() == active.getPhysicalWidth()
-                                        && m.getPhysicalHeight() == active.getPhysicalHeight()) {
-                                    return 1;
-                                }
-                                return 2;
-                            }
-                        });
+                        Display.Mode active = info.getMode();
+                        // fast path:系统已把当前模式排第一(常见)→ 零分配直接返回
+                        if (supported[0].getModeId() == active.getModeId()) {
+                            return result;
+                        }
+                        // 缓存:同一显示配置下复用已排序数组,避免每次
+                        // Arrays.copyOf + Arrays.sort + new Comparator 匿名类
+                        // (system_server 高 GC 压力 -> 全系统卡顿)
+                        int key = active.getModeId() * 31 + supported.length;
+                        Display.Mode[] sorted = sSortedModes;
+                        if (sSortedKey != key) {
+                            sorted = sortModes(supported, active);
+                            sSortedKey = key;
+                            sSortedModes = sorted;
+                        }
                         DisplayInfo copy = new DisplayInfo(info);
                         copy.supportedModes = sorted;
                         return copy;
@@ -303,6 +309,37 @@ final class ResolutionUnlock {
             args[i] = chain.getArgs().get(i);
         }
         return args;
+    }
+
+    /** 手写选择排序(无 Comparator 匿名类分配)。supportedModes 数量很小(2~8),够用。 */
+    private static Display.Mode[] sortModes(Display.Mode[] supported, Display.Mode active) {
+        Display.Mode[] sorted = Arrays.copyOf(supported, supported.length);
+        int n = sorted.length;
+        for (int i = 0; i < n; i++) {
+            int best = i;
+            for (int j = i + 1; j < n; j++) {
+                if (rank(sorted[j], active) < rank(sorted[best], active)) {
+                    best = j;
+                }
+            }
+            if (best != i) {
+                Display.Mode tmp = sorted[i];
+                sorted[i] = sorted[best];
+                sorted[best] = tmp;
+            }
+        }
+        return sorted;
+    }
+
+    private static int rank(Display.Mode m, Display.Mode active) {
+        if (m.getModeId() == active.getModeId()) {
+            return 0;
+        }
+        if (m.getPhysicalWidth() == active.getPhysicalWidth()
+                && m.getPhysicalHeight() == active.getPhysicalHeight()) {
+            return 1;
+        }
+        return 2;
     }
 
     private static Field findField(Class<?> clazz, String name) {
