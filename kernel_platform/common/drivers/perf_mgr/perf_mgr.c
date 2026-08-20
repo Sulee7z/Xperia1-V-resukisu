@@ -188,8 +188,8 @@ static int perf_gpu_adjust(unsigned long long duration_ns,
 		return 0;
 	bucket = gpu_load_bucket(duration_ns, budget);
 
-	if (duration_ns > budget * 2) {
-		/* dropped frame: raise one level now, remember what it took */
+	if (duration_ns > budget * 3) {
+		/* severe frame drop (>3x budget): raise one level, remember it */
 		if (gpu_learn_idx < gpu_freq_count - 1)
 			gpu_learn_idx++;
 		gpu_mem[bucket] = gpu_learn_idx;
@@ -197,13 +197,9 @@ static int perf_gpu_adjust(unsigned long long duration_ns,
 		gpu_last_raise = jiffies;
 		return 1;
 	} else if (duration_ns <= budget) {
-		/* in budget: drift down for energy, but never below the
-		 * remembered good level of this bucket (no re-learning) */
-		if (++gpu_ok_frames >= GPU_DRIFT_FRAMES) {
+		/* in budget: drift down fast (no hold) for max energy saving */
+		if (++gpu_ok_frames >= 10) {
 			gpu_ok_frames = 0;
-			if (time_before(jiffies, gpu_last_raise +
-					msecs_to_jiffies(GPU_RAISE_HOLD_MS)))
-				return 0;
 			if (gpu_learn_idx > 0 &&
 			    (gpu_mem[bucket] < 0 ||
 			     gpu_learn_idx > gpu_mem[bucket])) {
@@ -212,7 +208,7 @@ static int perf_gpu_adjust(unsigned long long duration_ns,
 			}
 		}
 	} else {
-		/* borderline: reset drift counter */
+		/* borderline (1x-3x): reset drift counter */
 		gpu_ok_frames = 0;
 	}
 	return 0;
